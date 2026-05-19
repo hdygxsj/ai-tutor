@@ -1,0 +1,86 @@
+# OS and editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.worktrees
+.worktrees/
+.idea/
+.vscode/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+credentials.json
+secrets.json
+
+# Python backend
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# Node frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+# Test and browser artifacts
+coverage/
+test-results/
+playwright-report/
+blob-report/
+*.profraw
+
+# Local runtime data
+artifacts/
+datasets/
+runs/
+storage/
+tmp/
+temp/
+logs/
+*.log
+
+# Database and Docker local state
+*.sqlite
+*.sqlite3
+postgres_data/
+docker-data/
+
+# Generated notebooks and model outputs
+*.ipynb_checkpoints/
+checkpoints/
+models/
+*.pt
+*.pth
+*.onnx
+
+# MemPalace per-project local data
+mempalace.yaml
+entities.json
