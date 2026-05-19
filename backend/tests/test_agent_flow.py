@@ -1,0 +1,71 @@
+from collections.abc import Generator
+
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
+
+from app.api.deps import get_session
+from app.db.base import Base
+from app.main import app
+from app.schemas.learning import LessonSummary
+
+
+def test_agent_intake_creates_plan_and_dashboard_reflects_assignment() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    def override_get_session() -> Generator[Session, None, None]:
+        with Session(engine) as db:
+            yield db
+
+    original_override = app.dependency_overrides.get(get_session)
+    app.dependency_overrides[get_session] = override_get_session
+    try:
+        client = TestClient(app)
+        intake_response = client.post(
+            "/api/agent/intake",
+            json={
+                "goal": "掌握机器学习基础并完成第一个 PyTorch 作业",
+                "background": "会一点 Python，还没有系统学过机器学习",
+                "weekly_hours": 6,
+            },
+        )
+
+        assert intake_response.status_code == 200
+        intake = intake_response.json()
+        assert intake["title"] == "机器学习教师计划"
+        assert intake["goal"] == "掌握机器学习基础并完成第一个 PyTorch 作业"
+        assert len(intake["lessons"]) >= 1
+        assert intake["lessons"][0]["status"] == "assignment_ready"
+        assert intake["lessons"][0]["mastery_score"] == 1
+        assert intake["lessons"][0]["next_action"] == "完成 autograd 概念作业"
+
+        dashboard_response = client.get("/api/learning/dashboard")
+
+        assert dashboard_response.status_code == 200
+        dashboard = dashboard_response.json()
+        assert dashboard["assigned_count"] == 1
+        assert dashboard["active_plan_title"] == intake["title"]
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_session, None)
+        else:
+            app.dependency_overrides[get_session] = original_override
+
+
+def test_lesson_summary_accepts_status_strings() -> None:
+    summary = LessonSummary(
+        id="lesson-1",
+        title="Autograd",
+        objective="理解自动求导",
+        status="ready_for_review",
+        mastery_score=0,
+        next_action="开始学习",
+    )
+
+    assert summary.status == "ready_for_review"

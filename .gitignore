@@ -1,0 +1,61 @@
+# OS and editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+**/*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+venv/
+env/
+
+# Node and frontend builds
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Test and Playwright artifacts
+test-results/
+playwright-report/
+blob-report/
+.playwright-browsers/
+coverage/
+frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
+
+# Local runtime data
+artifacts/
+datasets/
+
+# Local database and Docker state
+*.db
+*.sqlite
+*.sqlite3
+postgres-data/
+pgdata/
+.docker/
+docker-data/
+
+# Project-local worktrees
+.worktrees
+.worktrees/
