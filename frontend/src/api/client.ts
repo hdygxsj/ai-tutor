@@ -1,4 +1,10 @@
-import type { DashboardSummary, LearningPlanSummary } from "../types/learning";
+import type {
+  DashboardSummary,
+  LearningPlanSummary,
+  TutorConnectionTestResult,
+  TutorSettings,
+  TutorSettingsUpdate,
+} from "../types/learning";
 
 export const API_BASE =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
@@ -57,4 +63,26 @@ export function startIntake(payload: IntakePayload): Promise<LearningPlanSummary
 
 export function fetchDashboard(): Promise<DashboardSummary> {
   return requestJson<DashboardSummary>("/learning/dashboard");
+}
+
+export function fetchTutorSettings(): Promise<TutorSettings> {
+  return requestJson<TutorSettings>("/settings/tutor");
+}
+
+export function saveTutorSettings(
+  payload: TutorSettingsUpdate,
+): Promise<TutorSettings> {
+  return requestJson<TutorSettings>("/settings/tutor", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function testTutorSettings(
+  payload: TutorSettingsUpdate,
+): Promise<TutorConnectionTestResult> {
+  return requestJson<TutorConnectionTestResult>("/settings/tutor/test", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
