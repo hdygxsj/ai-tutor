@@ -27,7 +27,15 @@ vi.mock("../api/client", () => ({
     mastery_average: 0,
     next_action: "继续学习下一课",
   }),
+  fetchTutorSettings: vi.fn().mockResolvedValue({
+    base_url: "",
+    has_api_key: false,
+    model_name: "",
+    provider: "fake",
+  }),
+  saveTutorSettings: vi.fn(),
   startIntake: vi.fn(),
+  testTutorSettings: vi.fn(),
 }));
 
 test("renders the task 6 application shell", () => {
@@ -57,7 +65,7 @@ test("renders auxiliary pages after clicking menu items", async () => {
 
   await user.click(menuItem("设置"));
   expect(screen.getByRole("heading", { name: "学习者偏好" })).toBeInTheDocument();
-  expect(screen.getByText("设置表单将在后续任务中启用。")).toBeInTheDocument();
+  expect(await screen.findByText("AI 导师配置")).toBeInTheDocument();
 });
 
 function menuItem(label: string): HTMLElement {

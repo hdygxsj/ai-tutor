@@ -30,3 +30,24 @@ export interface DashboardSummary {
   assigned_count: number;
   mastery_average: number;
 }
+
+export type TutorProvider = "fake" | "ollama" | "openai_compatible";
+
+export interface TutorSettings {
+  provider: TutorProvider;
+  base_url?: string | null;
+  model_name?: string | null;
+  has_api_key: boolean;
+}
+
+export interface TutorSettingsUpdate {
+  provider: TutorProvider;
+  base_url?: string;
+  model_name?: string;
+  api_key?: string;
+}
+
+export interface TutorConnectionTestResult {
+  ok: boolean;
+  message: string;
+}
