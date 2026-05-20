@@ -34,6 +34,7 @@ vi.mock("../api/client", () => ({
     provider: "fake",
   }),
   saveTutorSettings: vi.fn(),
+  sendTutorMessage: vi.fn(),
   startIntake: vi.fn(),
   testTutorSettings: vi.fn(),
 }));
@@ -53,7 +54,9 @@ test("renders auxiliary pages after clicking menu items", async () => {
 
   await user.click(menuItem("AI 导师"));
   expect(screen.getByRole("heading", { name: "引导式学习对话" })).toBeInTheDocument();
-  expect(screen.getByText("等待任务接入对话流。")).toBeInTheDocument();
+  expect(
+    screen.getByText("M2.1 使用 Settings 里的导师 provider，学习计划/评分仍保持确定性。"),
+  ).toBeInTheDocument();
 
   await user.click(menuItem("学习计划"));
   expect(screen.getByRole("heading", { name: "学习计划" })).toBeInTheDocument();

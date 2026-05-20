@@ -1,6 +1,8 @@
 import type {
   DashboardSummary,
   LearningPlanSummary,
+  TutorChatRequest,
+  TutorChatResponse,
   TutorConnectionTestResult,
   TutorSettings,
   TutorSettingsUpdate,
@@ -56,6 +58,15 @@ async function readErrorMessage(response: Response): Promise<string> {
 
 export function startIntake(payload: IntakePayload): Promise<LearningPlanSummary> {
   return requestJson<LearningPlanSummary>("/agent/intake", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function sendTutorMessage(
+  payload: TutorChatRequest,
+): Promise<TutorChatResponse> {
+  return requestJson<TutorChatResponse>("/agent/chat", {
     method: "POST",
     body: JSON.stringify(payload),
   });
