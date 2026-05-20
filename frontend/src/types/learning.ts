@@ -51,3 +51,20 @@ export interface TutorConnectionTestResult {
   ok: boolean;
   message: string;
 }
+
+export type ChatRole = "system" | "user" | "assistant";
+
+export interface TutorChatMessage {
+  role: ChatRole;
+  content: string;
+}
+
+export interface TutorChatRequest {
+  message: string;
+  history?: TutorChatMessage[];
+}
+
+export interface TutorChatResponse {
+  reply: string;
+  provider: TutorProvider;
+}

@@ -12,6 +12,9 @@ class TutorSettingsService:
     def get_settings(self) -> TutorSettingsResponse:
         return self._to_response(self._settings)
 
+    def get_current_settings(self) -> TutorSettingsUpdate:
+        return self._settings
+
     def save_settings(self, settings: TutorSettingsUpdate) -> TutorSettingsResponse:
         api_key = settings.api_key if self._has_value(settings.api_key) else self._settings.api_key
         self._settings = TutorSettingsUpdate(
