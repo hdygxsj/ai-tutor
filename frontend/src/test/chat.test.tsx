@@ -30,6 +30,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  window.localStorage.clear();
   mockedSendTutorMessage.mockResolvedValue({
     provider: "fake",
     reply: "可以先从监督学习的训练流程开始。",
@@ -75,6 +76,53 @@ test("returned assistant reply appears in the thread", async () => {
   await user.click(screen.getByRole("button", { name: "发送" }));
 
   expect(await screen.findByText("可以先从监督学习的训练流程开始。")).toBeInTheDocument();
+});
+
+test("persists chat history across remounts", async () => {
+  const user = userEvent.setup();
+  const { unmount } = render(<ChatPage />);
+
+  await user.type(screen.getByLabelText("输入给导师的消息"), "我想复习 autograd");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+
+  expect(await screen.findByText("可以先从监督学习的训练流程开始。")).toBeInTheDocument();
+
+  unmount();
+  render(<ChatPage />);
+
+  expect(screen.getByText("我想复习 autograd")).toBeInTheDocument();
+  expect(screen.getByText("可以先从监督学习的训练流程开始。")).toBeInTheDocument();
+});
+
+test("clears persisted history and restores the initial greeting", async () => {
+  const user = userEvent.setup();
+
+  render(<ChatPage />);
+
+  await user.type(screen.getByLabelText("输入给导师的消息"), "清空前的问题");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  expect(await screen.findByText("可以先从监督学习的训练流程开始。")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "清空对话" }));
+
+  expect(screen.queryByText("清空前的问题")).not.toBeInTheDocument();
+  expect(screen.getByText(initialGreeting)).toBeInTheDocument();
+  expect(window.localStorage.getItem("ai-dream:tutor-chat-history")).toBeNull();
+});
+
+test("pressing Enter sends the current message", async () => {
+  const user = userEvent.setup();
+
+  render(<ChatPage />);
+
+  await user.type(screen.getByLabelText("输入给导师的消息"), "用回车发送{Enter}");
+
+  await waitFor(() =>
+    expect(mockedSendTutorMessage).toHaveBeenCalledWith({
+      history: [{ content: initialGreeting, role: "assistant" }],
+      message: "用回车发送",
+    }),
+  );
 });
 
 test("API failure shows visible error and preserves conversation", async () => {

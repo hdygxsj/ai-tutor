@@ -55,7 +55,7 @@ test("renders auxiliary pages after clicking menu items", async () => {
   await user.click(menuItem("AI 导师"));
   expect(screen.getByRole("heading", { name: "引导式学习对话" })).toBeInTheDocument();
   expect(
-    screen.getByText("M2.1 使用 Settings 里的导师 provider，学习计划/评分仍保持确定性。"),
+    screen.getByText(/M2\.1 使用 Settings 里的导师 provider/),
   ).toBeInTheDocument();
 
   await user.click(menuItem("学习计划"));
