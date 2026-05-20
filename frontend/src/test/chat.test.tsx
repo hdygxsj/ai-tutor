@@ -125,6 +125,84 @@ test("pressing Enter sends the current message", async () => {
   );
 });
 
+test("shows an animated thinking indicator while waiting for the tutor", async () => {
+  const user = userEvent.setup();
+  let resolveReply: (() => void) | undefined;
+  mockedSendTutorMessage.mockReturnValue(
+    new Promise((resolve) => {
+      resolveReply = () =>
+        resolve({
+          provider: "fake",
+          reply: "这一步可以从损失函数开始。",
+        });
+    }),
+  );
+
+  render(<ChatPage />);
+
+  await user.type(screen.getByLabelText("输入给导师的消息"), "讲讲损失函数");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+
+  expect(await screen.findByLabelText("AI 导师正在思考")).toBeInTheDocument();
+  expect(screen.getByText("正在组织回答")).toBeInTheDocument();
+
+  resolveReply?.();
+  expect(await screen.findByText("这一步可以从损失函数开始。")).toBeInTheDocument();
+});
+
+test("opens history drawer and restores an earlier conversation", async () => {
+  const user = userEvent.setup();
+
+  render(<ChatPage />);
+
+  await user.type(screen.getByLabelText("输入给导师的消息"), "第一段历史问题");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  expect(await screen.findByText("可以先从监督学习的训练流程开始。")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "新对话" }));
+  await user.type(screen.getByLabelText("输入给导师的消息"), "第二段问题");
+
+  expect(screen.queryByText("第一段历史问题")).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "历史记录" }));
+  expect(await screen.findByRole("dialog", { name: "历史记录" })).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /第一段历史问题/ }));
+
+  expect(screen.getAllByText("第一段历史问题").length).toBeGreaterThan(0);
+  expect(screen.queryByText("第二段问题")).not.toBeInTheDocument();
+});
+
+test("appends delayed tutor replies to the session that sent the message", async () => {
+  const user = userEvent.setup();
+  let resolveReply: (() => void) | undefined;
+  mockedSendTutorMessage.mockReturnValue(
+    new Promise((resolve) => {
+      resolveReply = () =>
+        resolve({
+          provider: "fake",
+          reply: "这是第一段对话的延迟回复。",
+        });
+    }),
+  );
+
+  render(<ChatPage />);
+
+  await user.type(screen.getByLabelText("输入给导师的消息"), "第一段延迟问题");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  await user.click(screen.getByRole("button", { name: "新对话" }));
+
+  resolveReply?.();
+  await waitFor(() => expect(mockedSendTutorMessage).toHaveBeenCalledTimes(1));
+
+  expect(screen.queryByText("这是第一段对话的延迟回复。")).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "历史记录" }));
+  await user.click(screen.getByRole("button", { name: /第一段延迟问题/ }));
+
+  expect(await screen.findByText("这是第一段对话的延迟回复。")).toBeInTheDocument();
+});
+
 test("API failure shows visible error and preserves conversation", async () => {
   const user = userEvent.setup();
   mockedSendTutorMessage.mockRejectedValue(new Error("导师暂时不可用"));
