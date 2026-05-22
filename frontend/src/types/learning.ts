@@ -14,6 +14,14 @@ export interface LessonSummary {
   status: LearningStatus;
   mastery_score: number;
   next_action: string;
+  assignment?: {
+    id: string;
+    lesson_id: string;
+    title: string;
+    kind: string;
+    prompt: string;
+    status: string;
+  } | null;
 }
 
 export interface LearningPlanSummary {
@@ -22,6 +30,17 @@ export interface LearningPlanSummary {
   goal: string;
   status: string;
   lessons: LessonSummary[];
+}
+
+export type CourseSummary = LearningPlanSummary;
+
+export interface AgentSessionSummary {
+  id: string;
+  course_id: string;
+  title: string;
+  status: string;
+  messages: Array<Record<string, unknown>>;
+  token_usage: Record<string, number>;
 }
 
 export interface DashboardSummary {
@@ -57,14 +76,45 @@ export type ChatRole = "system" | "user" | "assistant";
 export interface TutorChatMessage {
   role: ChatRole;
   content: string;
+  createdAt?: string;
+  usage?: TokenUsage;
+  actions?: AgentAction[];
 }
 
 export interface TutorChatRequest {
   message: string;
   history?: TutorChatMessage[];
+  course_id?: string;
+  session_id?: string;
 }
 
 export interface TutorChatResponse {
   reply: string;
   provider: TutorProvider;
+  usage: TokenUsage;
+  actions: AgentAction[];
+  course_id?: string | null;
+  session_id?: string | null;
+}
+
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  provider: TutorProvider | string;
+  model?: string | null;
+  source: "provider" | "estimated" | "unknown" | string;
+}
+
+export interface AgentAction {
+  type: string;
+  label: string;
+  payload: Record<string, unknown>;
+}
+
+export interface AssignmentReviewSummary {
+  id: string;
+  status: string;
+  score: number;
+  feedback: string;
 }

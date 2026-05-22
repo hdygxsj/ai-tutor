@@ -36,6 +36,7 @@ def build_plan_summary(plan: LearningPlan) -> LearningPlanSummary:
 
 def build_lesson_summary(lesson: LearningLesson) -> LessonSummary:
     progress = lesson.progress_records[0] if lesson.progress_records else None
+    assignment = lesson.assignments[0] if lesson.assignments else None
     return LessonSummary(
         id=lesson.id,
         title=lesson.title,
@@ -43,4 +44,16 @@ def build_lesson_summary(lesson: LearningLesson) -> LessonSummary:
         status=progress.status if progress else "not_started",
         mastery_score=progress.mastery_score if progress else 0,
         next_action=progress.next_action if progress else "开始学习",
+        assignment=(
+            {
+                "id": assignment.id,
+                "lesson_id": assignment.lesson_id,
+                "title": assignment.title,
+                "kind": assignment.kind,
+                "prompt": assignment.prompt,
+                "status": assignment.status,
+            }
+            if assignment
+            else None
+        ),
     )

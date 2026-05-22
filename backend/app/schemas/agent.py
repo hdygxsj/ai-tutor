@@ -13,6 +13,8 @@ class ChatMessage(BaseModel):
 class TutorChatRequest(BaseModel):
     message: str = Field(min_length=1)
     history: list[ChatMessage] = Field(default_factory=list)
+    course_id: str | None = None
+    session_id: str | None = None
 
     @field_validator("message")
     @classmethod
@@ -26,3 +28,22 @@ class TutorChatRequest(BaseModel):
 class TutorChatResponse(BaseModel):
     reply: str
     provider: str
+    usage: "TokenUsage"
+    actions: list["AgentAction"] = Field(default_factory=list)
+    course_id: str | None = None
+    session_id: str | None = None
+
+
+class TokenUsage(BaseModel):
+    prompt_tokens: int = Field(ge=0)
+    completion_tokens: int = Field(ge=0)
+    total_tokens: int = Field(ge=0)
+    provider: str
+    model: str | None = None
+    source: str
+
+
+class AgentAction(BaseModel):
+    type: str
+    label: str
+    payload: dict[str, object] = Field(default_factory=dict)

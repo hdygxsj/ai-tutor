@@ -17,7 +17,7 @@ const PAGES: Record<AppMenuKey, JSX.Element> = {
 };
 
 export default function App() {
-  const [activeKey, setActiveKey] = useState<AppMenuKey>("dashboard");
+  const [activeKey, setActiveKey] = useState<AppMenuKey>("chat");
 
   return (
     <AppShell activeKey={activeKey} onSelect={setActiveKey}>

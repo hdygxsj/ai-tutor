@@ -27,24 +27,36 @@ vi.mock("../api/client", () => ({
     mastery_average: 0,
     next_action: "继续学习下一课",
   }),
+  fetchActivePlan: vi.fn().mockResolvedValue(null),
   fetchTutorSettings: vi.fn().mockResolvedValue({
     base_url: "",
     has_api_key: false,
     model_name: "",
     provider: "fake",
   }),
+  listCourses: vi.fn().mockResolvedValue([]),
+  listAgentSessions: vi.fn().mockResolvedValue([]),
+  createAgentSession: vi.fn(),
+  createCourse: vi.fn(),
+  activateCourse: vi.fn(),
   saveTutorSettings: vi.fn(),
   sendTutorMessage: vi.fn(),
   startIntake: vi.fn(),
   testTutorSettings: vi.fn(),
 }));
 
-test("renders the task 6 application shell", () => {
-  render(<App />);
+test("renders the Agent workspace shell with top navigation", () => {
+  const { container } = render(<App />);
+  const header = container.querySelector(".app-shell__header");
 
   expect(screen.getByText("AI Dream")).toBeInTheDocument();
-  expect(screen.getByText("机器学习教师 Agent")).toBeInTheDocument();
+  expect(screen.getByText("Agent 课程工作台")).toBeInTheDocument();
+  expect(header).toBeInTheDocument();
+  expect(header).not.toHaveTextContent("当前课程");
+  expect(header).not.toHaveTextContent("本会话 0 tokens");
   expect(screen.getByText("Dashboard")).toBeInTheDocument();
+  expect(screen.getAllByText("AI 导师").length).toBeGreaterThan(0);
+  expect(screen.getByText(initialGreeting)).toBeInTheDocument();
 });
 
 test("renders auxiliary pages after clicking menu items", async () => {
@@ -52,15 +64,9 @@ test("renders auxiliary pages after clicking menu items", async () => {
 
   render(<App />);
 
-  await user.click(menuItem("AI 导师"));
-  expect(screen.getByRole("heading", { name: "引导式学习对话" })).toBeInTheDocument();
-  expect(
-    screen.getByText(/M2\.1 使用 Settings 里的导师 provider/),
-  ).toBeInTheDocument();
-
   await user.click(menuItem("学习计划"));
   expect(screen.getByRole("heading", { name: "学习计划" })).toBeInTheDocument();
-  expect(screen.getByText("创建学习计划后，这里会展示课程模块。")).toBeInTheDocument();
+  expect(await screen.findByText("创建学习计划后，这里会展示课程模块。")).toBeInTheDocument();
 
   await user.click(menuItem("作业反馈"));
   expect(screen.getByRole("heading", { name: "作业与修订" })).toBeInTheDocument();
@@ -83,3 +89,6 @@ function menuItem(label: string): HTMLElement {
 
   return item;
 }
+
+const initialGreeting =
+  "你好，我是 AI Dream 导师。你可以告诉我今天想学习什么，我会用当前 Settings 中配置的导师 provider 帮你拆解下一步。";

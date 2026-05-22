@@ -1,8 +1,9 @@
 import json
+import math
 import urllib.request
 from typing import Any, Protocol
 
-from app.schemas.agent import ChatMessage, TutorChatRequest, TutorChatResponse
+from app.schemas.agent import ChatMessage, TokenUsage, TutorChatRequest, TutorChatResponse
 from app.schemas.settings import TutorSettingsUpdate
 from app.services.tutor_settings_service import TutorSettingsService
 
@@ -55,26 +56,36 @@ class TutorProviderService:
         settings = self.settings_service.get_current_settings()
 
         if settings.provider == "fake":
+            reply = (
+                f"你提到“{request.message}”。"
+                "建议先用一个小例子写出输入、损失和梯度，再继续下一步学习。"
+            )
             return TutorChatResponse(
-                reply=(
-                    f"你提到“{request.message}”。"
-                    "建议先用一个小例子写出输入、损失和梯度，再继续下一步学习。"
-                ),
+                reply=reply,
                 provider=settings.provider,
+                usage=self._estimated_usage(settings.provider, "fake", request, reply),
             )
 
         if settings.provider == "ollama":
+            reply, usage = self._ollama_reply(settings, request)
             return TutorChatResponse(
-                reply=self._ollama_reply(settings, request),
+                reply=reply,
                 provider=settings.provider,
+                usage=usage,
             )
 
+        reply, usage = self._openai_compatible_reply(settings, request)
         return TutorChatResponse(
-            reply=self._openai_compatible_reply(settings, request),
+            reply=reply,
             provider=settings.provider,
+            usage=usage,
         )
 
-    def _ollama_reply(self, settings: TutorSettingsUpdate, request: TutorChatRequest) -> str:
+    def _ollama_reply(
+        self,
+        settings: TutorSettingsUpdate,
+        request: TutorChatRequest,
+    ) -> tuple[str, TokenUsage]:
         base_url = self._require(settings.base_url, settings.provider, "base_url")
         model_name = self._require(settings.model_name, settings.provider, "model_name")
         response = self._post_json(
@@ -86,15 +97,16 @@ class TutorProviderService:
             },
         )
         try:
-            return self._parse_reply_content(response["message"]["content"])
+            reply = self._parse_reply_content(response["message"]["content"])
         except (KeyError, TypeError) as exc:
             raise TutorProviderError("Tutor provider returned an invalid response.", 502) from exc
+        return reply, self._ollama_usage(settings.provider, model_name, response)
 
     def _openai_compatible_reply(
         self,
         settings: TutorSettingsUpdate,
         request: TutorChatRequest,
-    ) -> str:
+    ) -> tuple[str, TokenUsage]:
         base_url = self._require(settings.base_url, settings.provider, "base_url")
         model_name = self._require(settings.model_name, settings.provider, "model_name")
         api_key = self._require(settings.api_key, settings.provider, "api_key")
@@ -108,9 +120,10 @@ class TutorProviderService:
             {"Authorization": f"Bearer {api_key}"},
         )
         try:
-            return self._parse_reply_content(response["choices"][0]["message"]["content"])
+            reply = self._parse_reply_content(response["choices"][0]["message"]["content"])
         except (IndexError, KeyError, TypeError) as exc:
             raise TutorProviderError("Tutor provider returned an invalid response.", 502) from exc
+        return reply, self._openai_usage(settings.provider, model_name, response)
 
     def _post_json(
         self,
@@ -135,6 +148,73 @@ class TutorProviderService:
         messages = [ChatMessage(role="system", content=SYSTEM_PROMPT), *request.history]
         messages.append(ChatMessage(role="user", content=request.message))
         return [message.model_dump() for message in messages]
+
+    def _estimated_usage(
+        self,
+        provider: str,
+        model: str,
+        request: TutorChatRequest,
+        reply: str,
+    ) -> TokenUsage:
+        prompt_chars = sum(len(message["content"]) for message in self._messages(request))
+        completion_chars = len(reply)
+        prompt_tokens = math.ceil(prompt_chars * (2 / 3))
+        completion_tokens = math.ceil(completion_chars * 0.75)
+        return TokenUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            provider=provider,
+            model=model,
+            source="estimated",
+        )
+
+    def _openai_usage(self, provider: str, model: str, response: dict[str, Any]) -> TokenUsage:
+        usage = response.get("usage")
+        if not isinstance(usage, dict):
+            return self._unknown_usage(provider, model)
+
+        prompt_tokens = self._safe_token_count(usage.get("prompt_tokens"))
+        completion_tokens = self._safe_token_count(usage.get("completion_tokens"))
+        total_tokens = self._safe_token_count(usage.get("total_tokens"))
+        if total_tokens == 0:
+            total_tokens = prompt_tokens + completion_tokens
+        return TokenUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            provider=provider,
+            model=model,
+            source="provider",
+        )
+
+    def _ollama_usage(self, provider: str, model: str, response: dict[str, Any]) -> TokenUsage:
+        if "prompt_eval_count" not in response and "eval_count" not in response:
+            return self._unknown_usage(provider, model)
+
+        prompt_tokens = self._safe_token_count(response.get("prompt_eval_count"))
+        completion_tokens = self._safe_token_count(response.get("eval_count"))
+        return TokenUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            provider=provider,
+            model=model,
+            source="provider",
+        )
+
+    def _unknown_usage(self, provider: str, model: str) -> TokenUsage:
+        return TokenUsage(
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            provider=provider,
+            model=model,
+            source="unknown",
+        )
+
+    def _safe_token_count(self, value: object) -> int:
+        return value if isinstance(value, int) and value >= 0 else 0
 
     def _require(self, value: str | None, provider: str, field_name: str) -> str:
         if value and value.strip():

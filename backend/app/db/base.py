@@ -6,3 +6,4 @@ class Base(DeclarativeBase):
 
 
 import app.models.learning  # noqa: E402,F401
+import app.models.settings  # noqa: E402,F401

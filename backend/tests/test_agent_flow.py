@@ -51,6 +51,16 @@ def test_agent_intake_creates_plan_and_dashboard_reflects_assignment() -> None:
         dashboard = dashboard_response.json()
         assert dashboard["assigned_count"] == 1
         assert dashboard["active_plan_title"] == intake["title"]
+
+        plan_response = client.get("/api/learning/active-plan")
+
+        assert plan_response.status_code == 200
+        active_plan = plan_response.json()
+        assert active_plan["id"] == intake["id"]
+        assert active_plan["title"] == "机器学习教师计划"
+        assert active_plan["goal"] == "掌握机器学习基础并完成第一个 PyTorch 作业"
+        assert active_plan["lessons"][0]["title"] == "张量和 autograd 入门"
+        assert active_plan["lessons"][0]["next_action"] == "完成 autograd 概念作业"
     finally:
         if original_override is None:
             app.dependency_overrides.pop(get_session, None)
@@ -69,3 +79,107 @@ def test_lesson_summary_accepts_status_strings() -> None:
     )
 
     assert summary.status == "ready_for_review"
+
+
+def test_courses_api_creates_switchable_courses_and_agent_sessions() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    def override_get_session() -> Generator[Session, None, None]:
+        with Session(engine) as db:
+            yield db
+
+    original_override = app.dependency_overrides.get(get_session)
+    app.dependency_overrides[get_session] = override_get_session
+    try:
+        client = TestClient(app)
+
+        first = client.post("/api/courses", json={"goal": "学习 PyTorch autograd"})
+        second = client.post("/api/courses", json={"goal": "学习 Rust 所有权"})
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        courses = client.get("/api/courses")
+
+        assert courses.status_code == 200
+        course_items = courses.json()
+        assert [course["goal"] for course in course_items] == [
+            "学习 Rust 所有权",
+            "学习 PyTorch autograd",
+        ]
+        assert course_items[0]["status"] == "active"
+        assert course_items[1]["status"] == "paused"
+
+        session_a = client.post(
+            f"/api/courses/{second.json()['id']}/sessions",
+            json={"title": "第一次老师窗口"},
+        )
+        session_b = client.post(
+            f"/api/courses/{second.json()['id']}/sessions",
+            json={"title": "复习窗口"},
+        )
+
+        assert session_a.status_code == 200
+        assert session_b.status_code == 200
+        assert session_a.json()["course_id"] == second.json()["id"]
+        assert session_a.json()["messages"] == []
+
+        sessions = client.get(f"/api/courses/{second.json()['id']}/sessions")
+
+        assert sessions.status_code == 200
+        assert [session["title"] for session in sessions.json()] == [
+            "复习窗口",
+            "第一次老师窗口",
+        ]
+
+        activate_first = client.post(f"/api/courses/{first.json()['id']}/activate")
+        assert activate_first.status_code == 200
+        assert activate_first.json()["status"] == "active"
+        assert client.get("/api/learning/dashboard").json()["active_plan_title"] == first.json()[
+            "title"
+        ]
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_session, None)
+        else:
+            app.dependency_overrides[get_session] = original_override
+
+
+def test_assignment_submit_api_returns_agent_review() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    def override_get_session() -> Generator[Session, None, None]:
+        with Session(engine) as db:
+            yield db
+
+    original_override = app.dependency_overrides.get(get_session)
+    app.dependency_overrides[get_session] = override_get_session
+    try:
+        client = TestClient(app)
+        course = client.post("/api/courses", json={"goal": "学习 autograd"}).json()
+        assignment_id = course["lessons"][0]["assignment"]["id"]
+
+        response = client.post(
+            f"/api/assignments/{assignment_id}/submit",
+            json={"content": "requires_grad 会追踪计算图，backward 会计算梯度。"},
+        )
+
+        assert response.status_code == 200
+        review = response.json()
+        assert review["status"] == "passed"
+        assert review["score"] == 90
+        assert review["feedback"] == "回答覆盖 requires_grad 与 backward。"
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_session, None)
+        else:
+            app.dependency_overrides[get_session] = original_override

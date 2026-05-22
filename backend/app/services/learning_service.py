@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.tenant import TenantContext
 from app.models.learning import (
+    AgentSession,
     Assignment,
     LearnerProfile,
     LearningEvent,
@@ -27,6 +28,8 @@ class LearningService:
         weekly_hours: int | None = None,
     ) -> LearningPlan:
         is_intake_plan = goal is not None
+        if is_intake_plan:
+            self.pause_active_courses()
         plan = LearningPlan(
             tenant_id=self.tenant.tenant_id,
             workspace_id=self.tenant.workspace_id,
@@ -102,6 +105,38 @@ class LearningService:
         )
         self.db.commit()
         return self._get_plan_graph(plan.id)
+
+    def list_courses(self) -> list[LearningPlan]:
+        return list(
+            self.db.scalars(
+                select(LearningPlan)
+                .where(
+                    LearningPlan.tenant_id == self.tenant.tenant_id,
+                    LearningPlan.workspace_id == self.tenant.workspace_id,
+                )
+                .options(*plan_graph_load_options())
+                .order_by(LearningPlan.created_at.desc())
+            )
+        )
+
+    def activate_course(self, course_id: str) -> LearningPlan:
+        course = self._get_plan_graph(course_id)
+        self.pause_active_courses(except_course_id=course.id)
+        course.status = "active"
+        self.db.commit()
+        return self._get_plan_graph(course.id)
+
+    def pause_active_courses(self, except_course_id: str | None = None) -> None:
+        active_courses = self.db.scalars(
+            select(LearningPlan).where(
+                LearningPlan.tenant_id == self.tenant.tenant_id,
+                LearningPlan.workspace_id == self.tenant.workspace_id,
+                LearningPlan.status == "active",
+            )
+        )
+        for course in active_courses:
+            if course.id != except_course_id:
+                course.status = "paused"
 
     def get_active_plan(self) -> LearningPlan | None:
         return self.db.scalar(
@@ -191,3 +226,87 @@ def plan_graph_load_options() -> tuple[Any, ...]:
         .selectinload(LearningModule.lessons)
         .selectinload(LearningLesson.progress_records),
     )
+
+
+class AgentSessionService:
+    def __init__(self, db: Session, tenant: TenantContext) -> None:
+        self.db = db
+        self.tenant = tenant
+
+    def list_sessions(self, course_id: str) -> list[AgentSession]:
+        self._require_course(course_id)
+        return list(
+            self.db.scalars(
+                select(AgentSession)
+                .where(
+                    AgentSession.tenant_id == self.tenant.tenant_id,
+                    AgentSession.workspace_id == self.tenant.workspace_id,
+                    AgentSession.course_id == course_id,
+                )
+                .order_by(AgentSession.updated_at.desc())
+            )
+        )
+
+    def create_session(self, course_id: str, title: str = "新的 Agent 会话") -> AgentSession:
+        self._require_course(course_id)
+        session = AgentSession(
+            tenant_id=self.tenant.tenant_id,
+            workspace_id=self.tenant.workspace_id,
+            course_id=course_id,
+            title=title,
+            messages=[],
+            token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        )
+        self.db.add(session)
+        self.db.commit()
+        self.db.refresh(session)
+        return session
+
+    def get_session(self, course_id: str, session_id: str) -> AgentSession:
+        session = self.db.scalar(
+            select(AgentSession).where(
+                AgentSession.id == session_id,
+                AgentSession.course_id == course_id,
+                AgentSession.tenant_id == self.tenant.tenant_id,
+                AgentSession.workspace_id == self.tenant.workspace_id,
+            )
+        )
+        if session is None:
+            raise ValueError("Agent session not found")
+        return session
+
+    def append_chat_turn(
+        self,
+        course_id: str,
+        session_id: str,
+        user_content: str,
+        assistant_content: str,
+        usage: dict[str, Any],
+        actions: list[dict[str, Any]] | None = None,
+    ) -> AgentSession:
+        session = self.get_session(course_id, session_id)
+        session.messages = [
+            *session.messages,
+            {"role": "user", "content": user_content},
+            {
+                "role": "assistant",
+                "content": assistant_content,
+                "usage": usage,
+                "actions": actions or [],
+            },
+        ]
+        current_usage = session.token_usage or {}
+        session.token_usage = {
+            "prompt_tokens": int(current_usage.get("prompt_tokens", 0))
+            + int(usage.get("prompt_tokens", 0)),
+            "completion_tokens": int(current_usage.get("completion_tokens", 0))
+            + int(usage.get("completion_tokens", 0)),
+            "total_tokens": int(current_usage.get("total_tokens", 0))
+            + int(usage.get("total_tokens", 0)),
+        }
+        self.db.commit()
+        self.db.refresh(session)
+        return session
+
+    def _require_course(self, course_id: str) -> LearningPlan:
+        return LearningService(self.db, self.tenant)._get_plan_graph(course_id)

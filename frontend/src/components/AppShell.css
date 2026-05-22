@@ -1,0 +1,69 @@
+.app-shell {
+  min-height: 100vh;
+  background: #f5f7fb;
+}
+
+.app-shell__header {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  gap: 24px;
+  height: 72px;
+  justify-content: space-between;
+  padding: 0 28px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.app-shell__brand {
+  flex: 0 0 auto;
+  min-width: 164px;
+}
+
+.app-shell__title.ant-typography {
+  margin: 0;
+}
+
+.app-shell__subtitle.ant-typography {
+  white-space: nowrap;
+}
+
+.app-shell__menu.ant-menu {
+  border-bottom: 0;
+  flex: 1;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.app-shell__content {
+  padding: 32px;
+}
+
+.app-shell__content--chat {
+  padding: 0;
+}
+
+.app-shell__content-inner {
+  margin: 0 auto;
+  max-width: 1120px;
+}
+
+.app-shell__content-inner--chat {
+  max-width: 100%;
+}
+
+@media (max-width: 760px) {
+  .app-shell__header {
+    align-items: flex-start;
+    flex-direction: column;
+    height: auto;
+    padding: 16px 20px 0;
+  }
+
+  .app-shell__menu.ant-menu {
+    justify-content: flex-start;
+    width: 100%;
+  }
+}

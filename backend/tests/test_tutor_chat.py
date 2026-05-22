@@ -9,6 +9,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_session
 from app.api.routes.settings import get_tutor_settings_service
+from app.core.config import get_settings
+from app.core.tenant import TenantContext
 from app.db.base import Base
 from app.main import app
 from app.schemas.settings import TutorSettingsUpdate
@@ -41,12 +43,31 @@ class RecordingTransport:
 
 @pytest.fixture()
 def tutor_settings_service() -> Generator[TutorSettingsService, None, None]:
-    service = TutorSettingsService()
-    app.dependency_overrides[get_tutor_settings_service] = lambda: service
-    try:
-        yield service
-    finally:
-        app.dependency_overrides.clear()
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    def override_get_session() -> Generator[Session, None, None]:
+        with Session(engine) as db:
+            yield db
+
+    app.dependency_overrides[get_session] = override_get_session
+
+    settings = get_settings()
+    tenant = TenantContext(
+        tenant_id=settings.default_tenant_id,
+        workspace_id=settings.default_workspace_id,
+    )
+    with Session(engine) as db:
+        service = TutorSettingsService(db, tenant)
+        app.dependency_overrides[get_tutor_settings_service] = lambda: service
+        try:
+            yield service
+        finally:
+            app.dependency_overrides.clear()
 
 
 def override_chat_provider(service: TutorSettingsService, transport: RecordingTransport) -> None:
@@ -85,11 +106,22 @@ def test_agent_chat_default_fake_returns_deterministic_reply_without_creating_pl
     assert before_dashboard.status_code == 200
     assert response.status_code == 200
     assert response.json() == {
+        "actions": [],
+        "course_id": None,
+        "session_id": None,
         "reply": (
             "你提到“我想学反向传播”。"
             "建议先用一个小例子写出输入、损失和梯度，再继续下一步学习。"
         ),
         "provider": "fake",
+        "usage": {
+            "completion_tokens": 32,
+            "model": "fake",
+            "prompt_tokens": 31,
+            "provider": "fake",
+            "source": "estimated",
+            "total_tokens": 63,
+        },
     }
     assert after_dashboard.status_code == 200
     assert after_dashboard.json() == before_dashboard.json()
@@ -131,8 +163,19 @@ def test_agent_chat_openai_compatible_uses_mock_transport_and_parses_reply(
 
     assert response.status_code == 200
     assert response.json() == {
+        "actions": [],
+        "course_id": None,
+        "session_id": None,
         "reply": "先从线性回归的损失函数开始。",
         "provider": "openai_compatible",
+        "usage": {
+            "completion_tokens": 0,
+            "model": "gpt-test",
+            "prompt_tokens": 0,
+            "provider": "openai_compatible",
+            "source": "unknown",
+            "total_tokens": 0,
+        },
     }
     assert len(transport.calls) == 1
     call = transport.calls[0]
@@ -170,7 +213,21 @@ def test_agent_chat_ollama_uses_mock_transport_and_parses_reply(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"reply": "用链式法则拆开计算。", "provider": "ollama"}
+    assert response.json() == {
+        "actions": [],
+        "course_id": None,
+        "session_id": None,
+        "reply": "用链式法则拆开计算。",
+        "provider": "ollama",
+        "usage": {
+            "completion_tokens": 0,
+            "model": "qwen2.5",
+            "prompt_tokens": 0,
+            "provider": "ollama",
+            "source": "unknown",
+            "total_tokens": 0,
+        },
+    }
     assert transport.calls == [
         {
             "url": "http://localhost:11434/api/chat",
@@ -262,3 +319,72 @@ def test_agent_chat_ollama_malformed_content_returns_clear_502(
 
     assert response.status_code == 502
     assert response.json()["detail"] == "Tutor provider returned an invalid response."
+
+
+def test_agent_chat_persists_messages_in_course_session_and_records_usage(
+    tutor_settings_service: TutorSettingsService,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    def override_get_session() -> Generator[Session, None, None]:
+        with Session(engine) as db:
+            yield db
+
+    original_override = app.dependency_overrides.get(get_session)
+    app.dependency_overrides[get_session] = override_get_session
+    try:
+        client = TestClient(app)
+        course = client.post("/api/courses", json={"goal": "学习线性回归"}).json()
+        session = client.post(
+            f"/api/courses/{course['id']}/sessions",
+            json={"title": "线性回归老师"},
+        ).json()
+
+        response = client.post(
+            "/api/agent/chat",
+            json={
+                "course_id": course["id"],
+                "session_id": session["id"],
+                "message": "我先学什么？",
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["course_id"] == course["id"]
+        assert payload["session_id"] == session["id"]
+        assert payload["usage"]["total_tokens"] > 0
+        assert payload["actions"] == [
+            {
+                "label": "代码作业已准备",
+                "payload": {
+                    "assignment_id": course["lessons"][0]["assignment"]["id"],
+                    "prompt": course["lessons"][0]["assignment"]["prompt"],
+                    "title": course["lessons"][0]["assignment"]["title"],
+                },
+                "type": "assignment_ready",
+            },
+        ]
+
+        sessions = client.get(f"/api/courses/{course['id']}/sessions").json()
+        assert sessions[0]["id"] == session["id"]
+        assert sessions[0]["messages"] == [
+            {"role": "user", "content": "我先学什么？"},
+            {
+                "role": "assistant",
+                "content": payload["reply"],
+                "usage": payload["usage"],
+                "actions": payload["actions"],
+            },
+        ]
+        assert sessions[0]["token_usage"]["total_tokens"] == payload["usage"]["total_tokens"]
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_session, None)
+        else:
+            app.dependency_overrides[get_session] = original_override

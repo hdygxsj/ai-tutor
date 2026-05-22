@@ -8,7 +8,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ai_dream -d ai_dream"]
       interval: 5s
@@ -16,6 +16,7 @@ services:
       retries: 10
 
   backend:
+    profiles: ["full"]
     build:
       context: ./backend
     environment:
@@ -32,6 +33,7 @@ services:
         condition: service_healthy
 
   frontend:
+    profiles: ["full"]
     image: node:22-alpine
     working_dir: /app
     command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
@@ -41,6 +43,3 @@ services:
       - ./frontend:/app
     depends_on:
       - backend
-
-volumes:
-  postgres-data:

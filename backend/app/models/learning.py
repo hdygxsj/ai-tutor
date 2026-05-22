@@ -62,6 +62,31 @@ class LearningPlan(LearningBase):
         cascade="all, delete-orphan",
         order_by="LearningModule.position",
     )
+    agent_sessions: Mapped[list["AgentSession"]] = relationship(
+        back_populates="course",
+        cascade="all, delete-orphan",
+        order_by="AgentSession.updated_at.desc()",
+    )
+
+
+class AgentSession(LearningBase):
+    __tablename__ = "agent_sessions"
+
+    course_id: Mapped[str] = mapped_column(
+        ForeignKey("learning_plans.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), default="新的 Agent 会话", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    messages: Mapped[list[Any]] = mapped_column(JSON, default=list, nullable=False)
+    token_usage: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        default=lambda: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        nullable=False,
+    )
+
+    course: Mapped[LearningPlan] = relationship(back_populates="agent_sessions")
 
 
 class LearningModule(LearningBase):

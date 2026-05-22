@@ -2,20 +2,29 @@ from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
-from app.api.routes.settings import get_tutor_settings_service
+from app.api.deps import get_session
+from app.db.base import Base
 from app.main import app
-from app.services.tutor_settings_service import TutorSettingsService
 
 
 @pytest.fixture(autouse=True)
-def reset_tutor_settings_service() -> Generator[None]:
-    service = TutorSettingsService()
+def sqlite_settings_db() -> Generator[None, None, None]:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
 
-    def override_tutor_settings_service() -> TutorSettingsService:
-        return service
+    def override_get_session() -> Generator[Session, None, None]:
+        with Session(engine) as db:
+            yield db
 
-    app.dependency_overrides[get_tutor_settings_service] = override_tutor_settings_service
+    app.dependency_overrides[get_session] = override_get_session
     try:
         yield
     finally:

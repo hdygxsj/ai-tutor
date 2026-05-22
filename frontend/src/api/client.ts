@@ -1,5 +1,8 @@
 import type {
   DashboardSummary,
+  AgentSessionSummary,
+  AssignmentReviewSummary,
+  CourseSummary,
   LearningPlanSummary,
   TutorChatRequest,
   TutorChatResponse,
@@ -12,6 +15,12 @@ export const API_BASE =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
 
 export interface IntakePayload {
+  goal: string;
+  background?: string;
+  weekly_hours?: number;
+}
+
+export interface CoursePayload {
   goal: string;
   background?: string;
   weekly_hours?: number;
@@ -74,6 +83,51 @@ export function sendTutorMessage(
 
 export function fetchDashboard(): Promise<DashboardSummary> {
   return requestJson<DashboardSummary>("/learning/dashboard");
+}
+
+export function fetchActivePlan(): Promise<LearningPlanSummary | null> {
+  return requestJson<LearningPlanSummary | null>("/learning/active-plan");
+}
+
+export function listCourses(): Promise<CourseSummary[]> {
+  return requestJson<CourseSummary[]>("/courses");
+}
+
+export function createCourse(payload: CoursePayload): Promise<CourseSummary> {
+  return requestJson<CourseSummary>("/courses", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function activateCourse(courseId: string): Promise<CourseSummary> {
+  return requestJson<CourseSummary>(`/courses/${courseId}/activate`, {
+    method: "POST",
+  });
+}
+
+export function listAgentSessions(courseId: string): Promise<AgentSessionSummary[]> {
+  return requestJson<AgentSessionSummary[]>(`/courses/${courseId}/sessions`);
+}
+
+export function createAgentSession(
+  courseId: string,
+  title = "新的 Agent 会话",
+): Promise<AgentSessionSummary> {
+  return requestJson<AgentSessionSummary>(`/courses/${courseId}/sessions`, {
+    method: "POST",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function submitAssignment(
+  assignmentId: string,
+  content: string,
+): Promise<AssignmentReviewSummary> {
+  return requestJson<AssignmentReviewSummary>(`/assignments/${assignmentId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
 }
 
 export function fetchTutorSettings(): Promise<TutorSettings> {

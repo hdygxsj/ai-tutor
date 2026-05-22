@@ -14,6 +14,7 @@ class LessonSummary(BaseModel):
     status: str
     mastery_score: int = Field(strict=True)
     next_action: str
+    assignment: dict | None = None
 
 
 class LearningPlanSummary(BaseModel):
@@ -22,6 +23,33 @@ class LearningPlanSummary(BaseModel):
     goal: str
     status: str
     lessons: list[LessonSummary]
+
+
+class CourseCreateRequest(BaseModel):
+    goal: str = Field(min_length=3)
+    background: str = ""
+    weekly_hours: int = Field(default=5, ge=1, le=80)
+
+
+class CourseSummary(BaseModel):
+    id: str
+    title: str
+    goal: str
+    status: str
+    lessons: list[LessonSummary]
+
+
+class AgentSessionCreateRequest(BaseModel):
+    title: str = Field(default="新的 Agent 会话", min_length=1)
+
+
+class AgentSessionSummary(BaseModel):
+    id: str
+    course_id: str
+    title: str
+    status: str
+    messages: list[dict]
+    token_usage: dict
 
 
 class DashboardSummary(BaseModel):

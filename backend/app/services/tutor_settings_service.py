@@ -1,29 +1,40 @@
+from sqlalchemy.orm import Session
+
+from app.core.tenant import TenantContext
 from app.schemas.settings import (
     TutorConnectionTestResponse,
     TutorSettingsResponse,
     TutorSettingsUpdate,
 )
+from app.services.workspace_settings_store import WorkspaceSettingsStore
+
+TUTOR_SETTINGS_KEY = "tutor"
 
 
 class TutorSettingsService:
-    def __init__(self) -> None:
-        self._settings = TutorSettingsUpdate(provider="fake")
+    def __init__(self, db: Session, tenant: TenantContext) -> None:
+        self.store = WorkspaceSettingsStore(db, tenant)
 
     def get_settings(self) -> TutorSettingsResponse:
-        return self._to_response(self._settings)
+        return self._to_response(self.get_current_settings())
 
     def get_current_settings(self) -> TutorSettingsUpdate:
-        return self._settings
+        stored = self.store.get_value(TUTOR_SETTINGS_KEY)
+        if stored is None:
+            return TutorSettingsUpdate(provider="fake")
+        return TutorSettingsUpdate(**stored)
 
     def save_settings(self, settings: TutorSettingsUpdate) -> TutorSettingsResponse:
-        api_key = settings.api_key if self._has_value(settings.api_key) else self._settings.api_key
-        self._settings = TutorSettingsUpdate(
+        current = self.get_current_settings()
+        api_key = settings.api_key if self._has_value(settings.api_key) else current.api_key
+        saved = TutorSettingsUpdate(
             provider=settings.provider,
             base_url=settings.base_url,
             model_name=settings.model_name,
             api_key=api_key,
         )
-        return self._to_response(self._settings)
+        self.store.save_value(TUTOR_SETTINGS_KEY, saved.model_dump())
+        return self._to_response(saved)
 
     def test_settings(self, settings: TutorSettingsUpdate) -> TutorConnectionTestResponse:
         if settings.provider == "fake":
@@ -72,7 +83,4 @@ class TutorSettingsService:
         if self._has_value(settings.api_key):
             return settings.api_key
 
-        return self._settings.api_key
-
-
-tutor_settings_service = TutorSettingsService()
+        return self.get_current_settings().api_key
