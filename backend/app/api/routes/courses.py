@@ -10,6 +10,7 @@ from app.schemas.learning import (
     AgentSessionSummary,
     CourseCreateRequest,
     CourseSummary,
+    CourseTimelineResponse,
 )
 from app.services.agent_service import build_plan_summary
 from app.services.learning_service import AgentSessionService, LearningService
@@ -55,6 +56,18 @@ def activate_course(
     return CourseSummary.model_validate(build_plan_summary(course).model_dump())
 
 
+@router.get("/{course_id}/timeline", response_model=CourseTimelineResponse)
+def get_course_timeline(
+    course_id: str,
+    db: Annotated[Session, Depends(get_session)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
+) -> CourseTimelineResponse:
+    try:
+        return LearningService(db, tenant).get_course_timeline(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Course not found") from exc
+
+
 @router.get("/{course_id}/sessions", response_model=list[AgentSessionSummary])
 def list_agent_sessions(
     course_id: str,
@@ -65,7 +78,10 @@ def list_agent_sessions(
         sessions = AgentSessionService(db, tenant).list_sessions(course_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="Course not found") from exc
-    return [AgentSessionSummary.model_validate(session, from_attributes=True) for session in sessions]
+    return [
+        AgentSessionSummary.model_validate(session, from_attributes=True)
+        for session in sessions
+    ]
 
 
 @router.post("/{course_id}/sessions", response_model=AgentSessionSummary)

@@ -2,8 +2,10 @@ import type {
   DashboardSummary,
   AgentSessionSummary,
   AssignmentReviewSummary,
+  CourseTimelineResponse,
   CourseSummary,
   LearningPlanSummary,
+  ExperimentRunResult,
   TutorChatRequest,
   TutorChatResponse,
   TutorConnectionTestResult,
@@ -11,8 +13,7 @@ import type {
   TutorSettingsUpdate,
 } from "../types/learning";
 
-export const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
+export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
 export interface IntakePayload {
   goal: string;
@@ -106,6 +107,10 @@ export function activateCourse(courseId: string): Promise<CourseSummary> {
   });
 }
 
+export function fetchCourseTimeline(courseId: string): Promise<CourseTimelineResponse> {
+  return requestJson<CourseTimelineResponse>(`/courses/${courseId}/timeline`);
+}
+
 export function listAgentSessions(courseId: string): Promise<AgentSessionSummary[]> {
   return requestJson<AgentSessionSummary[]>(`/courses/${courseId}/sessions`);
 }
@@ -149,5 +154,11 @@ export function testTutorSettings(
   return requestJson<TutorConnectionTestResult>("/settings/tutor/test", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export function runMinimalExperiment(): Promise<ExperimentRunResult> {
+  return requestJson<ExperimentRunResult>("/experiments/minimal", {
+    method: "POST",
   });
 }

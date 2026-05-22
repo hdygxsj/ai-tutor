@@ -44,6 +44,13 @@ def chat_with_tutor(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     if request.course_id and request.session_id:
         response.actions = build_course_actions(db, tenant, request.course_id)
+        if response.actions:
+            response.reply = build_course_teaching_reply(
+                db,
+                tenant,
+                request.course_id,
+                response.reply,
+            )
         try:
             AgentSessionService(db, tenant).append_chat_turn(
                 course_id=request.course_id,
@@ -86,3 +93,29 @@ def build_course_actions(
                     )
                 ]
     return []
+
+
+def build_course_teaching_reply(
+    db: Session,
+    tenant: TenantContext,
+    course_id: str,
+    provider_reply: str,
+) -> str:
+    try:
+        course = LearningService(db, tenant)._get_plan_graph(course_id)
+    except ValueError:
+        return provider_reply
+
+    for module in course.modules:
+        for lesson in module.lessons:
+            if lesson.assignments:
+                assignment = lesson.assignments[0]
+                return (
+                    f"{provider_reply}\n\n"
+                    f"知识点：{lesson.content} 先把输入、计算图、损失函数和梯度这几个角色串起来，"
+                    "再看 requires_grad 如何记录计算、backward 如何把梯度传回叶子张量。\n\n"
+                    f"下一步：我已经为你准备了《{assignment.title}》。"
+                    "请先按题目要求写出解释或代码，右侧工作区会自动打开，"
+                    "你可以在那里运行/提交并获得 Agent 审阅。"
+                )
+    return provider_reply

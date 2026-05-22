@@ -72,7 +72,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   return (
     <div className="chat-panel">
-      {!hasConversation ? (
+      {!hasConversation && !codeLayoutActive ? (
         <Card className="chat-hero" variant="borderless">
           <div className="chat-hero__content">
             <Typography.Text className="chat-hero__eyebrow">AI 导师</Typography.Text>
@@ -89,29 +89,32 @@ export function ChatPanel({
 
       <Card className="chat-shell" styles={{ body: { padding: 0 } }} variant="borderless">
         <div className="chat-toolbar">
-          <Space>
+          <div className="chat-toolbar__identity">
             <Avatar icon={<RobotOutlined />} className="chat-toolbar__avatar" />
             <div className="chat-toolbar__copy">
-              <Typography.Text strong>AI Dream 导师</Typography.Text>
-              <Typography.Text type="secondary">
-                {currentCourse ? `当前课程：${currentCourse.title}` : "等待你的问题"}
-              </Typography.Text>
-              <Typography.Text type="secondary">
-                {lastProvider ? `最近回复：${providerLabels[lastProvider]}` : "等待导师回复"}
-              </Typography.Text>
-              <Typography.Text type="secondary">
-                本会话 {sessionTokenTotal} tokens
-              </Typography.Text>
+              <span className="chat-toolbar__title">AI Dream 导师</span>
+              <div className="chat-toolbar__meta">
+                <Typography.Text type="secondary">
+                  {currentCourse ? `当前课程：${currentCourse.title}` : "等待你的问题"}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {lastProvider ? `最近回复：${providerLabels[lastProvider]}` : "等待导师回复"}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  本会话 {sessionTokenTotal} tokens
+                </Typography.Text>
+              </div>
             </div>
-          </Space>
+          </div>
           <Space className="chat-toolbar__actions" wrap>
             <Button
               aria-label="调试布局"
+              className="chat-toolbar__debug-toggle"
               icon={<BugOutlined />}
               onClick={onToggleDebugLayout}
-              type={codeLayoutActive ? "primary" : "default"}
+              type="text"
             >
-              调试布局
+              {codeLayoutActive ? "收起调试" : "调试布局"}
             </Button>
             <Button aria-label="历史记录" icon={<HistoryOutlined />} onClick={onOpenHistory}>
               历史记录

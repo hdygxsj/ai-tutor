@@ -1,28 +1,49 @@
-.app-shell {
-  min-height: 100vh;
-  background: #f5f7fb;
+html,
+body,
+#root {
+  height: 100%;
 }
 
-.app-shell__header {
+body {
+  overflow: hidden;
+}
+
+.app-shell {
+  background: #f5f7fb;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-shell__header.ant-layout-header {
   align-items: center;
   background: rgba(255, 255, 255, 0.96);
   border-bottom: 1px solid #e2e8f0;
   display: flex;
   gap: 24px;
-  height: 72px;
+  height: auto;
   justify-content: space-between;
-  padding: 0 28px;
+  line-height: normal;
+  min-height: 72px;
+  overflow: visible;
+  padding: 14px 28px;
   position: sticky;
   top: 0;
   z-index: 10;
 }
 
 .app-shell__brand {
+  display: flex;
   flex: 0 0 auto;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.25;
   min-width: 164px;
 }
 
 .app-shell__title.ant-typography {
+  line-height: 1.25;
   margin: 0;
 }
 
@@ -37,33 +58,75 @@
   min-width: 0;
 }
 
+.app-shell__menu.ant-menu-horizontal > .ant-menu-item,
+.app-shell__menu.ant-menu-horizontal > .ant-menu-submenu {
+  border-radius: 12px;
+  line-height: 36px;
+  margin-inline: 2px;
+  padding-inline: 12px;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.app-shell__menu.ant-menu-horizontal > .ant-menu-item::after,
+.app-shell__menu.ant-menu-horizontal > .ant-menu-submenu::after,
+.app-shell__menu.ant-menu-horizontal > .ant-menu-item-selected::after,
+.app-shell__menu.ant-menu-horizontal > .ant-menu-item-active::after,
+.app-shell__menu.ant-menu-horizontal > .ant-menu-item:hover::after {
+  border-bottom: 0 !important;
+  display: none !important;
+  inset-inline: 0 !important;
+  opacity: 0 !important;
+}
+
+.app-shell__menu.ant-menu-horizontal > .ant-menu-item-selected {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.app-shell__menu.ant-menu-horizontal > .ant-menu-item:hover {
+  background: #f1f5f9;
+}
+
 .app-shell__content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 32px;
 }
 
 .app-shell__content--chat {
+  display: flex;
+  flex-direction: column;
   padding: 0;
 }
 
 .app-shell__content-inner {
   margin: 0 auto;
   max-width: 1120px;
+  width: 100%;
 }
 
 .app-shell__content-inner--chat {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   max-width: 100%;
+  min-height: 0;
 }
 
 @media (max-width: 760px) {
-  .app-shell__header {
+  .app-shell__header.ant-layout-header {
     align-items: flex-start;
     flex-direction: column;
-    height: auto;
-    padding: 16px 20px 0;
+    padding: 16px 20px;
   }
 
   .app-shell__menu.ant-menu {
+    flex-wrap: wrap;
     justify-content: flex-start;
+    row-gap: 4px;
     width: 100%;
   }
 }

@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import App from "../App";
 
@@ -18,6 +18,19 @@ beforeAll(() => {
     })),
     writable: true,
   });
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+    configurable: true,
+    value: vi.fn(),
+  });
+});
+
+beforeEach(() => {
+  window.history.replaceState(null, "", "/");
+});
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
 });
 
 vi.mock("../api/client", () => ({
@@ -57,24 +70,67 @@ test("renders the Agent workspace shell with top navigation", () => {
   expect(screen.getByText("Dashboard")).toBeInTheDocument();
   expect(screen.getAllByText("AI 导师").length).toBeGreaterThan(0);
   expect(screen.getByText(initialGreeting)).toBeInTheDocument();
+  expect(container.querySelector(".chat-workspace")).not.toHaveClass("chat-workspace--coding");
+  expect(screen.queryByLabelText("在线 IDE / 调试工作区")).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe("/chat");
 });
 
-test("renders auxiliary pages after clicking menu items", async () => {
+test("navigation clicks update the URL and render auxiliary pages", async () => {
   const user = userEvent.setup();
 
   render(<App />);
 
   await user.click(menuItem("学习计划"));
+  expect(window.location.pathname).toBe("/learning");
   expect(screen.getByRole("heading", { name: "学习计划" })).toBeInTheDocument();
   expect(await screen.findByText("创建学习计划后，这里会展示课程模块。")).toBeInTheDocument();
 
   await user.click(menuItem("作业反馈"));
+  expect(window.location.pathname).toBe("/assignments");
   expect(screen.getByRole("heading", { name: "作业与修订" })).toBeInTheDocument();
   expect(screen.getByText("当前还没有待处理作业。")).toBeInTheDocument();
 
   await user.click(menuItem("设置"));
+  expect(window.location.pathname).toBe("/settings");
   expect(screen.getByRole("heading", { name: "学习者偏好" })).toBeInTheDocument();
   expect(await screen.findByText("AI 导师配置")).toBeInTheDocument();
+});
+
+test("renders the page matching the current URL on refresh", async () => {
+  window.history.pushState(null, "", "/settings");
+
+  render(<App />);
+
+  expect(window.location.pathname).toBe("/settings");
+  expect(screen.getByRole("heading", { name: "学习者偏好" })).toBeInTheDocument();
+  expect(await screen.findByText("AI 导师配置")).toBeInTheDocument();
+});
+
+test("supports browser back and forward navigation", async () => {
+  const user = userEvent.setup();
+
+  render(<App />);
+
+  await user.click(menuItem("Dashboard"));
+  expect(window.location.pathname).toBe("/dashboard");
+  expect(screen.getByRole("heading", { name: "今日学习面板" })).toBeInTheDocument();
+
+  window.history.back();
+  await waitFor(() => expect(window.location.pathname).toBe("/chat"));
+  expect(screen.getByText(initialGreeting)).toBeInTheDocument();
+
+  window.history.forward();
+  await waitFor(() => expect(window.location.pathname).toBe("/dashboard"));
+  expect(screen.getByRole("heading", { name: "今日学习面板" })).toBeInTheDocument();
+});
+
+test("falls back from unknown paths to the chat route", () => {
+  window.history.pushState(null, "", "/does-not-exist");
+
+  render(<App />);
+
+  expect(window.location.pathname).toBe("/chat");
+  expect(screen.getByText(initialGreeting)).toBeInTheDocument();
 });
 
 function menuItem(label: string): HTMLElement {

@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 
 import { Alert, Card, Empty, List, Space, Tag, Typography } from "antd";
 
-import { fetchActivePlan } from "../api/client";
-import type { LearningPlanSummary } from "../types/learning";
+import { fetchActivePlan, fetchCourseTimeline } from "../api/client";
+import type { CourseTimelineEvent, LearningPlanSummary } from "../types/learning";
 
 export function LearningPlanPage() {
   const [plan, setPlan] = useState<LearningPlanSummary | null>(null);
+  const [timelineEvents, setTimelineEvents] = useState<CourseTimelineEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,6 +22,14 @@ export function LearningPlanPage() {
         const activePlan = await fetchActivePlan();
         if (isCurrent) {
           setPlan(activePlan);
+        }
+        if (activePlan) {
+          const timeline = await fetchCourseTimeline(activePlan.id);
+          if (isCurrent) {
+            setTimelineEvents(timeline.events);
+          }
+        } else if (isCurrent) {
+          setTimelineEvents([]);
         }
       } catch (caughtError) {
         if (isCurrent) {
@@ -107,6 +116,48 @@ export function LearningPlanPage() {
           />
         )}
       </Card>
+
+      {plan ? (
+        <Card title="课程回溯">
+          {timelineEvents.length ? (
+            <List
+              dataSource={timelineEvents}
+              renderItem={(event) => (
+                <List.Item>
+                  <List.Item.Meta
+                    description={
+                      <Typography.Text type="secondary">
+                        {formatTimelineTime(event.created_at)} · {event.event_type}
+                      </Typography.Text>
+                    }
+                    title={<Typography.Text>{event.summary}</Typography.Text>}
+                  />
+                </List.Item>
+              )}
+            />
+          ) : (
+            <Empty
+              description="还没有可回溯的学习记录。"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            />
+          )}
+        </Card>
+      ) : null}
     </Space>
   );
+}
+
+function formatTimelineTime(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }

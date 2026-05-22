@@ -1,38 +1,10 @@
-from datetime import UTC, datetime
 from typing import Any
-from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-
-
-def new_id() -> str:
-    return str(uuid4())
-
-
-def utc_now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
-
-
-class TenantMixin:
-    tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-    workspace_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-
-
-class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(),
-        default=utc_now,
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(),
-        default=utc_now,
-        onupdate=utc_now,
-        nullable=False,
-    )
+from app.models.mixins import TenantMixin, TimestampMixin, new_id, utc_now
 
 
 class LearningBase(Base, TenantMixin, TimestampMixin):
@@ -171,6 +143,10 @@ class Assignment(LearningBase):
         back_populates="assignment",
         cascade="all, delete-orphan",
     )
+    runtime_runs: Mapped[list["RuntimeRun"]] = relationship(
+        back_populates="assignment",
+        cascade="all, delete-orphan",
+    )
 
 
 class AssignmentSubmission(LearningBase):
@@ -223,6 +199,28 @@ class LearningEvent(LearningBase):
 
     event_type: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class RuntimeRun(LearningBase):
+    __tablename__ = "runtime_runs"
+
+    course_id: Mapped[str] = mapped_column(
+        ForeignKey("learning_plans.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    assignment_id: Mapped[str] = mapped_column(
+        ForeignKey("assignments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    backend: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    logs: Mapped[list[Any]] = mapped_column(JSON, default=list, nullable=False)
+    artifacts: Mapped[list[Any]] = mapped_column(JSON, default=list, nullable=False)
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict, nullable=False)
+
+    assignment: Mapped[Assignment] = relationship(back_populates="runtime_runs")
 
 
 class AgentObservation(LearningBase):

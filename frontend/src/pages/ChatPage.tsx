@@ -36,7 +36,22 @@ export function ChatPage() {
   const isCreatingPlan = creatingPlanSessionId === currentSession.id;
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
+    const bottom = bottomRef.current;
+    const stream = bottom?.closest<HTMLElement>(".chat-stream");
+
+    if (!stream) {
+      return;
+    }
+
+    if (typeof stream.scrollTo === "function") {
+      stream.scrollTo({
+        top: stream.scrollHeight,
+        behavior: "smooth",
+      });
+      return;
+    }
+
+    stream.scrollTop = stream.scrollHeight;
   }, [messages, isSending]);
 
   async function handleSend() {
@@ -71,6 +86,14 @@ export function ChatPage() {
         role: "assistant",
         usage: response.usage,
       });
+      const assignmentAction = response.actions.find(
+        (action) =>
+          action.type === "assignment_ready" &&
+          typeof action.payload.assignment_id === "string",
+      );
+      if (assignmentAction) {
+        assignmentIde.openIdeFromAction(assignmentAction);
+      }
       updateSessionById(sendingSessionId, (session) => ({
         ...session,
         lastProvider: response.provider,

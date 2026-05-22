@@ -77,3 +77,16 @@ class AssignmentReviewSummary(BaseModel):
     status: str
     score: int
     feedback: str
+
+
+class CourseTimelineEvent(BaseModel):
+    id: str
+    event_type: str
+    summary: str
+    created_at: str
+    payload: dict
+
+
+class CourseTimelineResponse(BaseModel):
+    course_id: str
+    events: list[CourseTimelineEvent]

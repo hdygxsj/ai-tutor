@@ -17,3 +17,19 @@ class RuntimeSettingsResponse(BaseModel):
     sandbox_image: str
     kubernetes_namespace: str
     has_kubeconfig: bool
+
+
+class RuntimeRunRequest(BaseModel):
+    code: str = Field(min_length=1)
+    session_id: str | None = None
+
+
+class RuntimeRunResponse(BaseModel):
+    id: str
+    course_id: str
+    assignment_id: str
+    backend: RuntimeBackend
+    status: str
+    logs: list[str]
+    artifacts: list[dict]
+    metadata: dict = Field(default_factory=dict)

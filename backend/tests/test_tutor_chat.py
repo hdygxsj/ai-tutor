@@ -277,7 +277,7 @@ def test_agent_chat_transport_failure_returns_sanitized_502(
     response = TestClient(app).post("/api/agent/chat", json={"message": "你好"})
 
     assert response.status_code == 502
-    assert response.json()["detail"] == "Tutor provider request failed."
+    assert response.json()["detail"].startswith("导师服务请求失败：")
     assert "secret-key" not in response.json()["detail"]
     assert "Authorization" not in response.json()["detail"]
 
@@ -299,7 +299,7 @@ def test_agent_chat_openai_malformed_content_returns_clear_502(
     response = TestClient(app).post("/api/agent/chat", json={"message": "你好"})
 
     assert response.status_code == 502
-    assert response.json()["detail"] == "Tutor provider returned an invalid response."
+    assert response.json()["detail"] == "导师服务返回了无法解析的响应。"
 
 
 def test_agent_chat_ollama_malformed_content_returns_clear_502(
@@ -318,7 +318,7 @@ def test_agent_chat_ollama_malformed_content_returns_clear_502(
     response = TestClient(app).post("/api/agent/chat", json={"message": "你好"})
 
     assert response.status_code == 502
-    assert response.json()["detail"] == "Tutor provider returned an invalid response."
+    assert response.json()["detail"] == "导师服务返回了无法解析的响应。"
 
 
 def test_agent_chat_persists_messages_in_course_session_and_records_usage(
@@ -359,6 +359,9 @@ def test_agent_chat_persists_messages_in_course_session_and_records_usage(
         assert payload["course_id"] == course["id"]
         assert payload["session_id"] == session["id"]
         assert payload["usage"]["total_tokens"] > 0
+        assert "知识点" in payload["reply"]
+        assert "下一步" in payload["reply"]
+        assert course["lessons"][0]["assignment"]["title"] in payload["reply"]
         assert payload["actions"] == [
             {
                 "label": "代码作业已准备",

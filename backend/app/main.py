@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.agent import router as agent_router
 from app.api.routes.assignments import router as assignments_router
 from app.api.routes.courses import router as courses_router
+from app.api.routes.experiments import router as experiments_router
 from app.api.routes.health import router as health_router
 from app.api.routes.learning import router as learning_router
 from app.api.routes.runtime import router as runtime_router
@@ -23,7 +24,10 @@ app = FastAPI(title="AI Dream API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,4 +39,5 @@ app.include_router(courses_router, prefix="/api")
 app.include_router(learning_router, prefix="/api")
 app.include_router(assignments_router, prefix="/api")
 app.include_router(runtime_router, prefix="/api")
+app.include_router(experiments_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")

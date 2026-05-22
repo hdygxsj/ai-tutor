@@ -34,6 +34,19 @@ export interface LearningPlanSummary {
 
 export type CourseSummary = LearningPlanSummary;
 
+export interface CourseTimelineEvent {
+  id: string;
+  event_type: string;
+  summary: string;
+  created_at: string;
+  payload: Record<string, unknown>;
+}
+
+export interface CourseTimelineResponse {
+  course_id: string;
+  events: CourseTimelineEvent[];
+}
+
 export interface AgentSessionSummary {
   id: string;
   course_id: string;
@@ -117,4 +130,22 @@ export interface AssignmentReviewSummary {
   status: string;
   score: number;
   feedback: string;
+}
+
+export interface ExperimentArtifact {
+  name: string;
+  path: string;
+  content_type: string;
+}
+
+export interface ExperimentRunResult {
+  run_id: string;
+  status: string;
+  metrics: {
+    initial_loss: number;
+    final_loss: number;
+    improvement: number;
+  };
+  logs: string;
+  artifacts: ExperimentArtifact[];
 }

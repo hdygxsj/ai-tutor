@@ -28,6 +28,7 @@ class GradingService:
         )
         if assignment is None:
             raise ValueError("Assignment not found")
+        course_id = assignment.lesson.module.plan_id
 
         required_concepts = assignment.rubric.get("required_concepts", [])
         content_lower = content.lower()
@@ -120,6 +121,7 @@ class GradingService:
                     workspace_id=self.tenant.workspace_id,
                     event_type="assignment_graded",
                     payload={
+                        "course_id": course_id,
                         "assignment_id": assignment.id,
                         "status": status,
                         "score": score,

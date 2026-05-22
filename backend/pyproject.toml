@@ -5,6 +5,7 @@ description = "FastAPI backend for the AI Dream local teacher agent platform."
 requires-python = ">=3.11"
 dependencies = [
   "alembic",
+  "certifi",
   "fastapi",
   "psycopg[binary]",
   "pydantic-settings",

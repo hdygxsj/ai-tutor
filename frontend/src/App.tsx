@@ -1,27 +1,52 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { AppShell } from "./components/AppShell";
-import type { AppMenuKey } from "./components/AppShell";
-import { AssignmentsPage } from "./pages/AssignmentsPage";
-import { ChatPage } from "./pages/ChatPage";
-import { DashboardPage } from "./pages/DashboardPage";
-import { LearningPlanPage } from "./pages/LearningPlanPage";
-import { SettingsPage } from "./pages/SettingsPage";
-
-const PAGES: Record<AppMenuKey, JSX.Element> = {
-  assignments: <AssignmentsPage />,
-  chat: <ChatPage />,
-  dashboard: <DashboardPage />,
-  learning: <LearningPlanPage />,
-  settings: <SettingsPage />,
-};
+import {
+  APP_ROUTE_BY_KEY,
+  type AppMenuKey,
+  resolveAppRoute,
+} from "./app-routes";
 
 export default function App() {
-  const [activeKey, setActiveKey] = useState<AppMenuKey>("chat");
+  const [currentRoute, setCurrentRoute] = useState(() =>
+    resolveRouteFromLocation({ replaceInvalidPath: true }),
+  );
+
+  useEffect(() => {
+    function handlePopState() {
+      setCurrentRoute(resolveRouteFromLocation({ replaceInvalidPath: true }));
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  const handleSelect = useCallback(
+    (key: AppMenuKey) => {
+      const route = APP_ROUTE_BY_KEY[key];
+
+      if (route.path !== window.location.pathname) {
+        window.history.pushState(null, "", route.path);
+      }
+
+      setCurrentRoute(route);
+    },
+    [],
+  );
 
   return (
-    <AppShell activeKey={activeKey} onSelect={setActiveKey}>
-      {PAGES[activeKey]}
+    <AppShell activeKey={currentRoute.key} onSelect={handleSelect}>
+      {currentRoute.element}
     </AppShell>
   );
+}
+
+function resolveRouteFromLocation({ replaceInvalidPath }: { replaceInvalidPath: boolean }) {
+  const { route, shouldReplace } = resolveAppRoute(window.location.pathname);
+
+  if (replaceInvalidPath && shouldReplace) {
+    window.history.replaceState(null, "", route.path);
+  }
+
+  return route;
 }

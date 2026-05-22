@@ -1,8 +1,11 @@
 import json
 import math
+import ssl
+import urllib.error
 import urllib.request
 from typing import Any, Protocol
 
+from app.core.config import get_settings
 from app.schemas.agent import ChatMessage, TokenUsage, TutorChatRequest, TutorChatResponse
 from app.schemas.settings import TutorSettingsUpdate
 from app.services.tutor_settings_service import TutorSettingsService
@@ -26,7 +29,29 @@ class TutorTransport(Protocol):
     ) -> dict[str, Any]: ...
 
 
+def build_ssl_context() -> ssl.SSLContext:
+    if not get_settings().tutor_ssl_verify:
+        return ssl._create_unverified_context()
+
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def openai_chat_completions_url(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    if base.endswith("/v1"):
+        return f"{base}/chat/completions"
+    return f"{base}/v1/chat/completions"
+
+
 class HttpTutorTransport:
+    def __init__(self, ssl_context: ssl.SSLContext | None = None) -> None:
+        self.ssl_context = ssl_context or build_ssl_context()
+
     def post_json(
         self,
         url: str,
@@ -39,7 +64,7 @@ class HttpTutorTransport:
             headers={"Content-Type": "application/json", **(headers or {})},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30, context=self.ssl_context) as response:
             return json.loads(response.read().decode("utf-8"))
 
 
@@ -99,7 +124,7 @@ class TutorProviderService:
         try:
             reply = self._parse_reply_content(response["message"]["content"])
         except (KeyError, TypeError) as exc:
-            raise TutorProviderError("Tutor provider returned an invalid response.", 502) from exc
+            raise TutorProviderError("导师服务返回了无法解析的响应。", 502) from exc
         return reply, self._ollama_usage(settings.provider, model_name, response)
 
     def _openai_compatible_reply(
@@ -111,7 +136,7 @@ class TutorProviderService:
         model_name = self._require(settings.model_name, settings.provider, "model_name")
         api_key = self._require(settings.api_key, settings.provider, "api_key")
         response = self._post_json(
-            f"{base_url.rstrip('/')}/chat/completions",
+            openai_chat_completions_url(base_url),
             {
                 "model": model_name,
                 "messages": self._messages(request),
@@ -122,7 +147,7 @@ class TutorProviderService:
         try:
             reply = self._parse_reply_content(response["choices"][0]["message"]["content"])
         except (IndexError, KeyError, TypeError) as exc:
-            raise TutorProviderError("Tutor provider returned an invalid response.", 502) from exc
+            raise TutorProviderError("导师服务返回了无法解析的响应。", 502) from exc
         return reply, self._openai_usage(settings.provider, model_name, response)
 
     def _post_json(
@@ -135,14 +160,48 @@ class TutorProviderService:
             return self.transport.post_json(url, payload, headers)
         except TutorProviderError:
             raise
+        except urllib.error.HTTPError as exc:
+            raise TutorProviderError(self._http_error_message(exc), 502) from exc
+        except urllib.error.URLError as exc:
+            raise TutorProviderError(self._url_error_message(exc), 502) from exc
         except Exception as exc:
-            raise TutorProviderError("Tutor provider request failed.", 502) from exc
+            raise TutorProviderError(
+                f"导师服务请求失败：{self._sanitize_error_text(str(exc))}",
+                502,
+            ) from exc
+
+    def _http_error_message(self, exc: urllib.error.HTTPError) -> str:
+        body = exc.read().decode("utf-8", errors="replace")[:300]
+        if body:
+            return f"导师服务返回 HTTP {exc.code}，请检查 Base URL、模型名与 API Key。详情：{body}"
+        return f"导师服务返回 HTTP {exc.code}，请检查 Base URL、模型名与 API Key。"
+
+    def _url_error_message(self, exc: urllib.error.URLError) -> str:
+        reason = exc.reason
+        if isinstance(reason, ssl.SSLError):
+            return (
+                "导师服务请求失败：SSL 证书校验未通过。"
+                "若使用 Clash/Zeus 等 HTTPS 解密代理，请关闭解密或在 backend/.env 设置 "
+                "TUTOR_SSL_VERIFY=false（仅本地调试）。"
+            )
+        if isinstance(reason, ConnectionRefusedError):
+            return "导师服务请求失败：连接被拒绝，请确认 Ollama/接口地址已启动且 Base URL 正确。"
+        if isinstance(reason, TimeoutError):
+            return "导师服务请求失败：连接超时，请检查网络或 Base URL。"
+        return f"导师服务请求失败：{self._sanitize_error_text(str(reason))}"
+
+    def _sanitize_error_text(self, text: str) -> str:
+        sanitized = text
+        for marker in ("Bearer ", "Authorization:"):
+            if marker in sanitized:
+                sanitized = sanitized.split(marker, 1)[0].rstrip()
+        return sanitized or "未知错误"
 
     def _parse_reply_content(self, content: Any) -> str:
         if isinstance(content, str) and content.strip():
             return content
 
-        raise TutorProviderError("Tutor provider returned an invalid response.", 502)
+        raise TutorProviderError("导师服务返回了无法解析的响应。", 502)
 
     def _messages(self, request: TutorChatRequest) -> list[dict[str, str]]:
         messages = [ChatMessage(role="system", content=SYSTEM_PROMPT), *request.history]

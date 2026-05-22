@@ -82,9 +82,12 @@ function AgentActionCard({
       <Typography.Text strong>{action.label}</Typography.Text>
       <Typography.Text type="secondary">{title}</Typography.Text>
       {canOpenIde ? (
-        <Button size="small" onClick={() => onOpenIde(action)}>
-          打开在线 IDE
-        </Button>
+        <>
+          <Typography.Text type="secondary">任务已在右侧打开</Typography.Text>
+          <Button size="small" onClick={() => onOpenIde(action)}>
+            重新聚焦 IDE
+          </Button>
+        </>
       ) : null}
     </div>
   );

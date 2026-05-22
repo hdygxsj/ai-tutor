@@ -14,6 +14,7 @@ from app.models.learning import (
     LearningPlan,
     LessonProgress,
 )
+from app.schemas.learning import CourseTimelineEvent, CourseTimelineResponse
 
 
 class LearningService:
@@ -100,7 +101,7 @@ class LearningService:
                 tenant_id=self.tenant.tenant_id,
                 workspace_id=self.tenant.workspace_id,
                 event_type="plan_created",
-                payload={"plan_id": plan.id, "title": plan.title},
+                payload={"plan_id": plan.id, "course_id": plan.id, "title": plan.title},
             )
         )
         self.db.commit()
@@ -202,6 +203,32 @@ class LearningService:
             "mastery_average": int(round(mastery_average or 0)),
         }
 
+    def get_course_timeline(self, course_id: str) -> CourseTimelineResponse:
+        course = self._get_plan_graph(course_id)
+        assignment_ids = {
+            assignment.id
+            for module in course.modules
+            for lesson in module.lessons
+            for assignment in lesson.assignments
+        }
+        session_ids = {session.id for session in course.agent_sessions}
+        events = list(
+            self.db.scalars(
+                select(LearningEvent)
+                .where(
+                    LearningEvent.tenant_id == self.tenant.tenant_id,
+                    LearningEvent.workspace_id == self.tenant.workspace_id,
+                )
+                .order_by(LearningEvent.created_at.asc())
+            )
+        )
+        timeline_events = [
+            self._timeline_event(event)
+            for event in events
+            if self._event_belongs_to_course(event, course.id, assignment_ids, session_ids)
+        ]
+        return CourseTimelineResponse(course_id=course.id, events=timeline_events)
+
     def _get_plan_graph(self, plan_id: str) -> LearningPlan:
         plan = self.db.scalar(
             select(LearningPlan)
@@ -215,6 +242,30 @@ class LearningService:
         if plan is None:
             raise ValueError("Learning plan not found")
         return plan
+
+    def _event_belongs_to_course(
+        self,
+        event: LearningEvent,
+        course_id: str,
+        assignment_ids: set[str],
+        session_ids: set[str],
+    ) -> bool:
+        payload = event.payload or {}
+        return (
+            payload.get("course_id") == course_id
+            or payload.get("plan_id") == course_id
+            or payload.get("assignment_id") in assignment_ids
+            or payload.get("session_id") in session_ids
+        )
+
+    def _timeline_event(self, event: LearningEvent) -> CourseTimelineEvent:
+        return CourseTimelineEvent(
+            id=event.id,
+            event_type=event.event_type,
+            summary=build_event_summary(event.event_type, event.payload or {}),
+            created_at=event.created_at.isoformat(),
+            payload=event.payload or {},
+        )
 
 
 def plan_graph_load_options() -> tuple[Any, ...]:
@@ -304,9 +355,38 @@ class AgentSessionService:
             "total_tokens": int(current_usage.get("total_tokens", 0))
             + int(usage.get("total_tokens", 0)),
         }
+        self.db.add(
+            LearningEvent(
+                tenant_id=self.tenant.tenant_id,
+                workspace_id=self.tenant.workspace_id,
+                event_type="agent_session_message",
+                payload={
+                    "course_id": course_id,
+                    "session_id": session_id,
+                    "user_message": user_content,
+                    "assistant_reply": assistant_content,
+                    "actions": actions or [],
+                    "usage": usage,
+                },
+            )
+        )
         self.db.commit()
         self.db.refresh(session)
         return session
 
     def _require_course(self, course_id: str) -> LearningPlan:
         return LearningService(self.db, self.tenant)._get_plan_graph(course_id)
+
+
+def build_event_summary(event_type: str, payload: dict[str, Any]) -> str:
+    if event_type == "plan_created":
+        return f"创建课程：{payload.get('title', '未命名课程')}"
+    if event_type == "agent_session_message":
+        return f"学习者提问：{payload.get('user_message', '')}"
+    if event_type == "assignment_graded":
+        return f"作业审阅：{payload.get('status', 'unknown')}，得分 {payload.get('score', 0)}"
+    if event_type == "runtime_run":
+        logs = payload.get("logs") or []
+        log_preview = logs[-1] if logs else payload.get("status", "")
+        return f"运行记录：{payload.get('backend', 'runtime')} {log_preview}"
+    return event_type

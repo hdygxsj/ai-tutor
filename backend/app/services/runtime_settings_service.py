@@ -15,8 +15,9 @@ class RuntimeSettingsService:
         stored = self.store.get_value(RUNTIME_SETTINGS_KEY)
         if stored is None:
             return self._to_response(RuntimeSettingsUpdate(), kubeconfig=None)
-        kubeconfig = stored.pop("kubeconfig", None)
-        return self._to_response(RuntimeSettingsUpdate(**stored), kubeconfig=kubeconfig)
+        payload = dict(stored)
+        kubeconfig = payload.pop("kubeconfig", None)
+        return self._to_response(RuntimeSettingsUpdate(**payload), kubeconfig=kubeconfig)
 
     def save_settings(self, update: RuntimeSettingsUpdate) -> RuntimeSettingsResponse:
         current = self._current_update()
@@ -40,6 +41,12 @@ class RuntimeSettingsService:
     def _current_update(self) -> dict[str, str | None]:
         stored = self.store.get_value(RUNTIME_SETTINGS_KEY)
         return stored or {}
+
+    def get_runtime_configuration(self) -> dict[str, str | None]:
+        stored = self.store.get_value(RUNTIME_SETTINGS_KEY)
+        if stored is None:
+            return RuntimeSettingsUpdate().model_dump()
+        return dict(stored)
 
     def _to_response(
         self,

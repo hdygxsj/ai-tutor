@@ -183,3 +183,64 @@ def test_assignment_submit_api_returns_agent_review() -> None:
             app.dependency_overrides.pop(get_session, None)
         else:
             app.dependency_overrides[get_session] = original_override
+
+
+def test_course_timeline_returns_chat_review_and_runtime_events() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    def override_get_session() -> Generator[Session, None, None]:
+        with Session(engine) as db:
+            yield db
+
+    original_override = app.dependency_overrides.get(get_session)
+    app.dependency_overrides[get_session] = override_get_session
+    try:
+        client = TestClient(app)
+        course = client.post("/api/courses", json={"goal": "学习 autograd"}).json()
+        session = client.post(
+            f"/api/courses/{course['id']}/sessions",
+            json={"title": "回溯测试"},
+        ).json()
+        assignment_id = course["lessons"][0]["assignment"]["id"]
+
+        chat_response = client.post(
+            "/api/agent/chat",
+            json={
+                "course_id": course["id"],
+                "session_id": session["id"],
+                "message": "我先学什么？",
+            },
+        )
+        run_response = client.post(
+            f"/api/assignments/{assignment_id}/run",
+            json={"code": "print('hello autograd')"},
+        )
+        review_response = client.post(
+            f"/api/assignments/{assignment_id}/submit",
+            json={"content": "requires_grad 会追踪计算图，backward 会计算梯度。"},
+        )
+        timeline_response = client.get(f"/api/courses/{course['id']}/timeline")
+
+        assert chat_response.status_code == 200
+        assert run_response.status_code == 200
+        assert review_response.status_code == 200
+        assert timeline_response.status_code == 200
+        timeline = timeline_response.json()
+        event_types = [event["event_type"] for event in timeline["events"]]
+        assert "plan_created" in event_types
+        assert "agent_session_message" in event_types
+        assert "runtime_run" in event_types
+        assert "assignment_graded" in event_types
+        assert any(event["summary"] == "学习者提问：我先学什么？" for event in timeline["events"])
+        assert any("hello autograd" in event["summary"] for event in timeline["events"])
+        assert any("90" in event["summary"] for event in timeline["events"])
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_session, None)
+        else:
+            app.dependency_overrides[get_session] = original_override

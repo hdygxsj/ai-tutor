@@ -7,6 +7,7 @@ import {
   createCourse,
   listAgentSessions,
   listCourses,
+  runAssignment,
   sendTutorMessage,
   startIntake,
   submitAssignment,
@@ -17,6 +18,7 @@ vi.mock("../api/client", () => ({
   sendTutorMessage: vi.fn(),
   startIntake: vi.fn(),
   submitAssignment: vi.fn(),
+  runAssignment: vi.fn(),
   listCourses: vi.fn(),
   createCourse: vi.fn(),
   listAgentSessions: vi.fn(),
@@ -26,6 +28,7 @@ vi.mock("../api/client", () => ({
 const mockedSendTutorMessage = vi.mocked(sendTutorMessage);
 const mockedStartIntake = vi.mocked(startIntake);
 const mockedSubmitAssignment = vi.mocked(submitAssignment);
+const mockedRunAssignment = vi.mocked(runAssignment);
 const mockedListCourses = vi.mocked(listCourses);
 const mockedCreateCourse = vi.mocked(createCourse);
 const mockedListAgentSessions = vi.mocked(listAgentSessions);
@@ -113,6 +116,19 @@ beforeEach(() => {
     score: 90,
     status: "passed",
   });
+  mockedRunAssignment.mockResolvedValue({
+    artifacts: [],
+    assignment_id: "assignment-1",
+    backend: "sandbox",
+    course_id: "course-1",
+    id: "run-1",
+    logs: [
+      "Sandbox prepared run with image python:3.12-slim.",
+      "Code preview: print('hello runtime')",
+    ],
+    metadata: { execution: "preview_only", image: "python:3.12-slim" },
+    status: "completed",
+  });
 });
 
 afterEach(() => {
@@ -148,6 +164,29 @@ test("debug layout toggle shows the right coding workspace", async () => {
   expect(container.querySelector(".chat-workspace")).toHaveClass("chat-workspace--coding");
   expect(screen.getByLabelText("在线 IDE / 调试工作区")).toBeInTheDocument();
   expect(screen.getByText("调试模式")).toBeInTheDocument();
+});
+
+test("debug layout uses the compact chat card without the large hero", async () => {
+  const user = userEvent.setup();
+  render(<ChatPage />);
+
+  expect(screen.getByRole("heading", { name: "引导式学习对话" })).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "调试布局" }));
+
+  expect(screen.queryByRole("heading", { name: "引导式学习对话" })).not.toBeInTheDocument();
+});
+
+test("chat header keeps the tutor title separate from wrapping meta", () => {
+  const { container } = render(<ChatPage />);
+
+  const title = screen.getByText("AI Dream 导师");
+
+  expect(title).toHaveClass("chat-toolbar__title");
+  expect(title).toHaveTextContent(/^AI Dream 导师$/);
+  expect(container.querySelector(".chat-toolbar__meta")).toHaveTextContent("等待你的问题");
+  expect(container.querySelector(".chat-toolbar__meta")).toHaveTextContent("等待导师回复");
+  expect(container.querySelector(".chat-toolbar__meta")).toHaveTextContent("本会话 0 tokens");
 });
 
 test("message bubbles do not repeat role titles above the text", async () => {
@@ -250,6 +289,47 @@ test("renders Agent action cards returned by the tutor", async () => {
   expect(screen.getByText("实现线性回归训练循环")).toBeInTheDocument();
 });
 
+test("automatically opens the IDE when an assignment action arrives", async () => {
+  const user = userEvent.setup();
+  mockedSendTutorMessage.mockResolvedValueOnce({
+    actions: [
+      {
+        label: "代码作业已准备",
+        payload: {
+          assignment_id: "assignment-1",
+          prompt: "实现一个最小 autograd 示例",
+          title: "实现线性回归训练循环",
+        },
+        type: "assignment_ready",
+      },
+    ],
+    course_id: "course-1",
+    provider: "fake",
+    reply:
+      "知识点：先理解计算图和梯度传播。\n\n下一步：任务会在右侧工作区打开。",
+    session_id: "session-1",
+    usage: {
+      completion_tokens: 18,
+      model: "fake",
+      prompt_tokens: 12,
+      provider: "fake",
+      source: "estimated",
+      total_tokens: 30,
+    },
+  });
+
+  const { container } = render(<ChatPage />);
+
+  await user.type(screen.getByLabelText("输入给导师的消息"), "给我代码题");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+
+  expect(await screen.findByText(/知识点：先理解计算图和梯度传播/)).toBeInTheDocument();
+  expect(container.querySelector(".chat-workspace")).toHaveClass("chat-workspace--coding");
+  expect(screen.getByLabelText("在线 IDE / 调试工作区")).toBeInTheDocument();
+  expect(screen.getByText("任务已在右侧打开")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "打开在线 IDE" })).not.toBeInTheDocument();
+});
+
 test("opens the IDE panel from an assignment action and submits for Agent review", async () => {
   const user = userEvent.setup();
   mockedSendTutorMessage.mockResolvedValueOnce({
@@ -282,7 +362,7 @@ test("opens the IDE panel from an assignment action and submits for Agent review
 
   await user.type(screen.getByLabelText("输入给导师的消息"), "给我代码题");
   await user.click(screen.getByRole("button", { name: "发送" }));
-  await user.click(await screen.findByRole("button", { name: "打开在线 IDE" }));
+  await screen.findByLabelText("在线 IDE / 调试工作区");
   await user.type(screen.getByLabelText("代码编辑器"), "loss.backward()");
   await user.click(screen.getByRole("button", { name: "提交给 Agent 审阅" }));
 
@@ -294,6 +374,111 @@ test("opens the IDE panel from an assignment action and submits for Agent review
   );
   expect(await screen.findByText("Agent 审阅完成")).toBeInTheDocument();
   expect(screen.getByText("代码覆盖了 requires_grad 与 backward。")).toBeInTheDocument();
+});
+
+test("runs assignment code through the runtime API and shows status logs", async () => {
+  const user = userEvent.setup();
+  mockedSendTutorMessage.mockResolvedValueOnce({
+    actions: [
+      {
+        label: "代码作业已准备",
+        payload: {
+          assignment_id: "assignment-1",
+          prompt: "实现一个最小 autograd 示例",
+          title: "实现线性回归训练循环",
+        },
+        type: "assignment_ready",
+      },
+    ],
+    course_id: "course-1",
+    provider: "fake",
+    reply: "打开右侧 IDE 完成这道题。",
+    session_id: "session-1",
+    usage: {
+      completion_tokens: 8,
+      model: "fake",
+      prompt_tokens: 12,
+      provider: "fake",
+      source: "estimated",
+      total_tokens: 20,
+    },
+  });
+
+  render(<ChatPage />);
+
+  await user.type(screen.getByLabelText("输入给导师的消息"), "给我代码题");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  await screen.findByLabelText("在线 IDE / 调试工作区");
+  expect(screen.getByLabelText("文件名")).toHaveValue("solution.py");
+  expect(screen.getByLabelText("语言")).toHaveTextContent("Python");
+
+  await user.type(screen.getByLabelText("代码编辑器"), "print('hello runtime')");
+  await user.click(screen.getByRole("button", { name: "运行代码" }));
+
+  await waitFor(() =>
+    expect(mockedRunAssignment).toHaveBeenCalledWith("assignment-1", {
+      code: expect.stringContaining("print('hello runtime')"),
+      session_id: "session-1",
+    }),
+  );
+  expect(await screen.findByText("运行结果")).toBeInTheDocument();
+  expect(screen.getByText("run-1")).toBeInTheDocument();
+  expect(screen.getByText("sandbox")).toBeInTheDocument();
+  expect(screen.getByText("completed")).toBeInTheDocument();
+  expect(screen.getByText("Code preview: print('hello runtime')")).toBeInTheDocument();
+});
+
+test("shows prepared Kubernetes runtime status without pretending execution happened", async () => {
+  const user = userEvent.setup();
+  mockedRunAssignment.mockResolvedValueOnce({
+    artifacts: [],
+    assignment_id: "assignment-1",
+    backend: "kubernetes",
+    course_id: "course-1",
+    id: "run-k8s-1",
+    logs: [
+      "Kubernetes run prepared in namespace ai-dream-runs.",
+      "No Job was created by this local preview runner.",
+    ],
+    metadata: { execution: "prepared_only", namespace: "ai-dream-runs" },
+    status: "queued",
+  });
+  mockedSendTutorMessage.mockResolvedValueOnce({
+    actions: [
+      {
+        label: "代码作业已准备",
+        payload: {
+          assignment_id: "assignment-1",
+          prompt: "实现一个最小 autograd 示例",
+          title: "实现线性回归训练循环",
+        },
+        type: "assignment_ready",
+      },
+    ],
+    course_id: "course-1",
+    provider: "fake",
+    reply: "打开右侧 IDE 完成这道题。",
+    session_id: "session-1",
+    usage: {
+      completion_tokens: 8,
+      model: "fake",
+      prompt_tokens: 12,
+      provider: "fake",
+      source: "estimated",
+      total_tokens: 20,
+    },
+  });
+
+  render(<ChatPage />);
+
+  await user.type(screen.getByLabelText("输入给导师的消息"), "给我代码题");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  await screen.findByLabelText("在线 IDE / 调试工作区");
+  await user.type(screen.getByLabelText("代码编辑器"), "print('queued only')");
+  await user.click(screen.getByRole("button", { name: "运行代码" }));
+
+  expect(await screen.findByText("已准备 K8s Job / 等待执行")).toBeInTheDocument();
+  expect(screen.getByText("No Job was created by this local preview runner.")).toBeInTheDocument();
 });
 
 test("shows IDE submission failures as errors instead of completed reviews", async () => {
@@ -329,7 +514,7 @@ test("shows IDE submission failures as errors instead of completed reviews", asy
 
   await user.type(screen.getByLabelText("输入给导师的消息"), "给我代码题");
   await user.click(screen.getByRole("button", { name: "发送" }));
-  await user.click(await screen.findByRole("button", { name: "打开在线 IDE" }));
+  await screen.findByLabelText("在线 IDE / 调试工作区");
   await user.type(screen.getByLabelText("代码编辑器"), "raise RuntimeError()");
   await user.click(screen.getByRole("button", { name: "提交给 Agent 审阅" }));
 
