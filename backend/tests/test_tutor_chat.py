@@ -82,7 +82,7 @@ def override_chat_provider(service: TutorSettingsService, transport: RecordingTr
     ] = override_tutor_provider_service
 
 
-def test_agent_chat_default_fake_returns_deterministic_reply_without_creating_plan(
+def test_agent_chat_default_fake_returns_teaching_reply_and_creates_course(
     tutor_settings_service: TutorSettingsService,
 ) -> None:
     engine = create_engine(
@@ -105,26 +105,19 @@ def test_agent_chat_default_fake_returns_deterministic_reply_without_creating_pl
 
     assert before_dashboard.status_code == 200
     assert response.status_code == 200
-    assert response.json() == {
-        "actions": [],
-        "course_id": None,
-        "session_id": None,
-        "reply": (
-            "你提到“我想学反向传播”。"
-            "建议先用一个小例子写出输入、损失和梯度，再继续下一步学习。"
-        ),
-        "provider": "fake",
-        "usage": {
-            "completion_tokens": 32,
-            "model": "fake",
-            "prompt_tokens": 31,
-            "provider": "fake",
-            "source": "estimated",
-            "total_tokens": 63,
-        },
-    }
+    payload = response.json()
+    assert payload["actions"] == []
+    assert payload["course_id"]
+    assert payload["session_id"]
+    assert payload["provider"] == "fake"
+    assert payload["reply"].startswith(
+        "你提到“我想学反向传播”。建议先用一个小例子写出输入、损失和梯度"
+    )
+    assert "知识点" in payload["reply"]
+    assert "检查理解" in payload["reply"]
+    assert payload["usage"]["total_tokens"] == 63
     assert after_dashboard.status_code == 200
-    assert after_dashboard.json() == before_dashboard.json()
+    assert after_dashboard.json()["active_plan_title"] == "机器学习教师计划"
     assert tutor_settings_service.get_settings().provider == "fake"
 
 
@@ -162,20 +155,20 @@ def test_agent_chat_openai_compatible_uses_mock_transport_and_parses_reply(
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "actions": [],
-        "course_id": None,
-        "session_id": None,
-        "reply": "先从线性回归的损失函数开始。",
+    payload = response.json()
+    assert payload["actions"] == []
+    assert payload["course_id"]
+    assert payload["session_id"]
+    assert payload["reply"].startswith("先从线性回归的损失函数开始。")
+    assert "知识点" in payload["reply"]
+    assert payload["provider"] == "openai_compatible"
+    assert payload["usage"] == {
+        "completion_tokens": 0,
+        "model": "gpt-test",
+        "prompt_tokens": 0,
         "provider": "openai_compatible",
-        "usage": {
-            "completion_tokens": 0,
-            "model": "gpt-test",
-            "prompt_tokens": 0,
-            "provider": "openai_compatible",
-            "source": "unknown",
-            "total_tokens": 0,
-        },
+        "source": "unknown",
+        "total_tokens": 0,
     }
     assert len(transport.calls) == 1
     call = transport.calls[0]
@@ -213,20 +206,20 @@ def test_agent_chat_ollama_uses_mock_transport_and_parses_reply(
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "actions": [],
-        "course_id": None,
-        "session_id": None,
-        "reply": "用链式法则拆开计算。",
+    payload = response.json()
+    assert payload["actions"] == []
+    assert payload["course_id"]
+    assert payload["session_id"]
+    assert payload["reply"].startswith("用链式法则拆开计算。")
+    assert "检查理解" in payload["reply"]
+    assert payload["provider"] == "ollama"
+    assert payload["usage"] == {
+        "completion_tokens": 0,
+        "model": "qwen2.5",
+        "prompt_tokens": 0,
         "provider": "ollama",
-        "usage": {
-            "completion_tokens": 0,
-            "model": "qwen2.5",
-            "prompt_tokens": 0,
-            "provider": "ollama",
-            "source": "unknown",
-            "total_tokens": 0,
-        },
+        "source": "unknown",
+        "total_tokens": 0,
     }
     assert transport.calls == [
         {
@@ -361,18 +354,8 @@ def test_agent_chat_persists_messages_in_course_session_and_records_usage(
         assert payload["usage"]["total_tokens"] > 0
         assert "知识点" in payload["reply"]
         assert "下一步" in payload["reply"]
-        assert course["lessons"][0]["assignment"]["title"] in payload["reply"]
-        assert payload["actions"] == [
-            {
-                "label": "代码作业已准备",
-                "payload": {
-                    "assignment_id": course["lessons"][0]["assignment"]["id"],
-                    "prompt": course["lessons"][0]["assignment"]["prompt"],
-                    "title": course["lessons"][0]["assignment"]["title"],
-                },
-                "type": "assignment_ready",
-            },
-        ]
+        assert "检查理解" in payload["reply"]
+        assert payload["actions"] == []
 
         sessions = client.get(f"/api/courses/{course['id']}/sessions").json()
         assert sessions[0]["id"] == session["id"]

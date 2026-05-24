@@ -10,6 +10,7 @@ from app.models.learning import (
     LearningEvent,
     LessonProgress,
     MasteryRecord,
+    RuntimeRun,
 )
 
 
@@ -18,7 +19,12 @@ class GradingService:
         self.db = db
         self.tenant = tenant
 
-    def submit_and_grade(self, assignment_id: str, content: str) -> AssignmentReview:
+    def submit_and_grade(
+        self,
+        assignment_id: str,
+        content: str,
+        run_id: str | None = None,
+    ) -> AssignmentReview:
         assignment = self.db.scalar(
             select(Assignment).where(
                 Assignment.id == assignment_id,
@@ -30,6 +36,7 @@ class GradingService:
             raise ValueError("Assignment not found")
         course_id = assignment.lesson.module.plan_id
 
+        runtime_run = self._resolve_runtime_run(assignment_id, run_id)
         required_concepts = assignment.rubric.get("required_concepts", [])
         content_lower = content.lower()
         matched_concepts = [
@@ -38,7 +45,7 @@ class GradingService:
         missing_concepts = [
             concept for concept in required_concepts if concept not in matched_concepts
         ]
-        passed = not missing_concepts
+        passed = runtime_run.exit_code == 0 if runtime_run is not None else not missing_concepts
         status = "passed" if passed else "needs_revision"
         score = 90 if passed else 45
 
@@ -46,13 +53,19 @@ class GradingService:
             "required_concepts": required_concepts,
             "matched_concepts": matched_concepts,
             "missing_concepts": missing_concepts,
+            "runtime": self._runtime_evidence(runtime_run),
         }
+        runtime_feedback = self._runtime_feedback(runtime_run)
         llm_review = {
             "verdict": status,
             "summary": (
-                "回答覆盖 requires_grad 与 backward。"
-                if passed
-                else "回答缺少关键 autograd 概念。"
+                runtime_feedback
+                if runtime_run is not None
+                else (
+                    "回答覆盖 requires_grad 与 backward。"
+                    if passed
+                    else "回答缺少关键 autograd 概念。"
+                )
             ),
         }
         progress = self.db.scalar(
@@ -68,7 +81,11 @@ class GradingService:
             workspace_id=self.tenant.workspace_id,
             assignment=assignment,
             content=content,
-            evidence={"source": "service", "required_concepts": required_concepts},
+            evidence={
+                "source": "service",
+                "required_concepts": required_concepts,
+                "runtime": self._runtime_evidence(runtime_run),
+            },
         )
         review = AssignmentReview(
             tenant_id=self.tenant.tenant_id,
@@ -119,10 +136,24 @@ class GradingService:
                 LearningEvent(
                     tenant_id=self.tenant.tenant_id,
                     workspace_id=self.tenant.workspace_id,
+                    event_type="submission_reviewed",
+                    payload={
+                        "course_id": course_id,
+                        "assignment_id": assignment.id,
+                        "run_id": runtime_run.id if runtime_run is not None else None,
+                        "status": status,
+                        "score": score,
+                        "feedback": llm_review["summary"],
+                    },
+                ),
+                LearningEvent(
+                    tenant_id=self.tenant.tenant_id,
+                    workspace_id=self.tenant.workspace_id,
                     event_type="assignment_graded",
                     payload={
                         "course_id": course_id,
                         "assignment_id": assignment.id,
+                        "run_id": runtime_run.id if runtime_run is not None else None,
                         "status": status,
                         "score": score,
                     },
@@ -132,3 +163,41 @@ class GradingService:
         self.db.commit()
         self.db.refresh(review)
         return review
+
+    def _resolve_runtime_run(self, assignment_id: str, run_id: str | None) -> RuntimeRun | None:
+        query = select(RuntimeRun).where(
+            RuntimeRun.assignment_id == assignment_id,
+            RuntimeRun.tenant_id == self.tenant.tenant_id,
+            RuntimeRun.workspace_id == self.tenant.workspace_id,
+        )
+        if run_id:
+            query = query.where(RuntimeRun.id == run_id)
+        else:
+            query = query.order_by(RuntimeRun.created_at.desc())
+        return self.db.scalar(query)
+
+    def _runtime_evidence(self, runtime_run: RuntimeRun | None) -> dict[str, object]:
+        if runtime_run is None:
+            return {}
+        return {
+            "run_id": runtime_run.id,
+            "backend": runtime_run.backend,
+            "status": runtime_run.status,
+            "exit_code": runtime_run.exit_code,
+            "stdout": runtime_run.stdout,
+            "stderr": runtime_run.stderr,
+            "test_results": runtime_run.test_results,
+        }
+
+    def _runtime_feedback(self, runtime_run: RuntimeRun | None) -> str:
+        if runtime_run is None:
+            return ""
+        if runtime_run.exit_code == 0:
+            return (
+                f"代码运行通过，run_id={runtime_run.id}，exit_code=0。"
+                "可以进入下一步。"
+            )
+        return (
+            f"代码还需要修改，run_id={runtime_run.id}，"
+            f"exit_code={runtime_run.exit_code}。请根据 stderr/test_results 复盘。"
+        )

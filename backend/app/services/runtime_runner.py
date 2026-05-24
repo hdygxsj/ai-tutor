@@ -1,4 +1,9 @@
+import ast
+import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -23,6 +28,10 @@ class RuntimeConfigurationError(ValueError):
 @dataclass(frozen=True)
 class PreparedRun:
     status: str
+    stdout: str
+    stderr: str
+    exit_code: int | None
+    test_results: dict[str, Any]
     logs: list[str]
     artifacts: list[dict[str, Any]]
     metadata: dict[str, Any]
@@ -35,23 +44,203 @@ class RuntimeRunner:
         raise NotImplementedError
 
 
+MAX_CAPTURED_OUTPUT_CHARS = 4000
+ALLOWED_IMPORTS: set[str] = set()
+DANGEROUS_NAMES = {
+    "__builtins__",
+    "__import__",
+    "breakpoint",
+    "classmethod",
+    "compile",
+    "delattr",
+    "dir",
+    "eval",
+    "exec",
+    "format",
+    "getattr",
+    "globals",
+    "input",
+    "locals",
+    "memoryview",
+    "object",
+    "open",
+    "property",
+    "setattr",
+    "staticmethod",
+    "super",
+    "type",
+    "vars",
+}
+
+
+class SandboxPolicyError(ValueError):
+    pass
+
+
+class SandboxPolicyValidator(ast.NodeVisitor):
+    def visit_Import(self, node: ast.Import) -> None:
+        raise SandboxPolicyError("Import statements are not allowed in sandbox runs.")
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        raise SandboxPolicyError("from-import statements are not allowed in sandbox runs.")
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if node.id in DANGEROUS_NAMES or node.id.startswith("_"):
+            raise SandboxPolicyError(f"Use of {node.id!r} is not allowed in sandbox runs.")
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if node.attr.startswith("_"):
+            raise SandboxPolicyError("Private attribute access is not allowed in sandbox runs.")
+        if node.attr in {"format", "format_map"}:
+            raise SandboxPolicyError("String field formatting is not allowed in sandbox runs.")
+        self.generic_visit(node)
+
+    def visit_Constant(self, node: ast.Constant) -> None:
+        if isinstance(node.value, str) and "__" in node.value:
+            raise SandboxPolicyError("Dunder string constants are not allowed in sandbox runs.")
+
+
+def validate_sandbox_code(code: str) -> None:
+    try:
+        parsed = ast.parse(code)
+    except SyntaxError as exc:
+        raise SandboxPolicyError(f"Syntax error: {exc.msg}") from exc
+    SandboxPolicyValidator().visit(parsed)
+
+
+def clip_output(value: str) -> str:
+    if len(value) <= MAX_CAPTURED_OUTPUT_CHARS:
+        return value
+    return f"{value[:MAX_CAPTURED_OUTPUT_CHARS]}\n... output truncated ..."
+
+
 class SandboxRunner(RuntimeRunner):
     backend = "sandbox"
 
-    def __init__(self, image: str) -> None:
+    def __init__(self, image: str, timeout_seconds: int = 5) -> None:
         self.image = image
+        self.timeout_seconds = timeout_seconds
 
     def prepare(self, code: str) -> PreparedRun:
-        preview = code.strip().splitlines()[0][:120] if code.strip() else "<empty>"
+        try:
+            validate_sandbox_code(code)
+        except SandboxPolicyError as exc:
+            message = str(exc)
+            return PreparedRun(
+                status="failed",
+                stdout="",
+                stderr=message,
+                exit_code=None,
+                test_results={"passed": False, "exit_code": None, "policy_error": message},
+                logs=[
+                    "Sandbox policy rejected the code before execution.",
+                    f"policy_error: {message}",
+                ],
+                artifacts=[],
+                metadata={
+                    "execution": "blocked",
+                    "image": self.image,
+                    "runner_type": "restricted_local_python_subprocess",
+                    "shell": False,
+                    "timeout_seconds": self.timeout_seconds,
+                },
+            )
+        with tempfile.TemporaryDirectory(prefix="ai-dream-sandbox-") as temporary_directory:
+            solution_path = Path(temporary_directory) / "solution.py"
+            runner_path = Path(temporary_directory) / "runner.py"
+            solution_path.write_text(code, encoding="utf-8")
+            runner_path.write_text(RESTRICTED_RUNNER_SCRIPT, encoding="utf-8")
+            try:
+                completed = subprocess.run(
+                    [sys.executable, "-I", "-B", str(runner_path)],
+                    cwd=temporary_directory,
+                    capture_output=True,
+                    check=False,
+                    env={"PYTHONIOENCODING": "utf-8"},
+                    shell=False,
+                    text=True,
+                    timeout=self.timeout_seconds,
+                )
+                stdout = clip_output(completed.stdout)
+                stderr = clip_output(completed.stderr)
+                exit_code = completed.returncode
+                status = "completed" if exit_code == 0 else "failed"
+            except subprocess.TimeoutExpired as exc:
+                stdout = clip_output(exc.stdout if isinstance(exc.stdout, str) else "")
+                stderr = clip_output(exc.stderr if isinstance(exc.stderr, str) else "")
+                exit_code = None
+                status = "failed"
+                stderr = f"{stderr}\nTimed out after {self.timeout_seconds}s.".strip()
+
+        test_results = {"passed": exit_code == 0, "exit_code": exit_code}
+        logs = [
+            f"Sandbox executed Python snippet with image setting {self.image}.",
+            f"exit_code: {exit_code}" if exit_code is not None else "exit_code: timeout",
+        ]
+        if stdout:
+            logs.append(f"stdout: {stdout.strip()}")
+        if stderr:
+            logs.append(f"stderr: {stderr.strip()}")
         return PreparedRun(
-            status="completed",
-            logs=[
-                f"Sandbox prepared run with image {self.image}.",
-                f"Code preview: {preview}",
-            ],
+            status=status,
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=exit_code,
+            test_results=test_results,
+            logs=logs,
             artifacts=[],
-            metadata={"execution": "preview_only", "image": self.image},
+            metadata={
+                "execution": "executed",
+                "image": self.image,
+                "runner_type": "restricted_local_python_subprocess",
+                "allowed_imports": sorted(ALLOWED_IMPORTS),
+                "shell": False,
+                "timeout_seconds": self.timeout_seconds,
+            },
         )
+
+
+RESTRICTED_RUNNER_SCRIPT = """
+from pathlib import Path
+
+
+def _limited_print(*values, sep=" ", end="\\n"):
+    print(*values, sep=sep, end=end)
+
+
+safe_builtins = {
+    "abs": abs,
+    "all": all,
+    "any": any,
+    "bool": bool,
+    "dict": dict,
+    "enumerate": enumerate,
+    "Exception": Exception,
+    "False": False,
+    "float": float,
+    "int": int,
+    "len": len,
+    "list": list,
+    "max": max,
+    "min": min,
+    "pow": pow,
+    "print": _limited_print,
+    "range": range,
+    "round": round,
+    "set": set,
+    "str": str,
+    "sum": sum,
+    "SystemExit": SystemExit,
+    "tuple": tuple,
+    "True": True,
+    "ValueError": ValueError,
+    "ZeroDivisionError": ZeroDivisionError,
+}
+
+source = Path("solution.py").read_text(encoding="utf-8")
+safe_globals = {"__builtins__": safe_builtins}
+exec(compile(source, "solution.py", "exec"), safe_globals, safe_globals)
+"""
 
 
 class KubernetesRunner(RuntimeRunner):
@@ -68,6 +257,10 @@ class KubernetesRunner(RuntimeRunner):
             )
         return PreparedRun(
             status="queued",
+            stdout="",
+            stderr="",
+            exit_code=None,
+            test_results={"passed": False, "execution": "prepared_only"},
             logs=[
                 f"Kubernetes run prepared in namespace {self.namespace}.",
                 "No Job was created by this local preview runner.",
@@ -104,6 +297,10 @@ class RuntimeRunService:
             assignment_id=assignment.id,
             backend=runner.backend,
             status=prepared.status,
+            stdout=prepared.stdout,
+            stderr=prepared.stderr,
+            exit_code=prepared.exit_code,
+            test_results=prepared.test_results,
             logs=prepared.logs,
             artifacts=prepared.artifacts,
             metadata_=prepared.metadata,
@@ -121,6 +318,10 @@ class RuntimeRunService:
                         "session_id": session_id,
                         "backend": runner.backend,
                         "status": prepared.status,
+                        "stdout": prepared.stdout,
+                        "stderr": prepared.stderr,
+                        "exit_code": prepared.exit_code,
+                        "test_results": prepared.test_results,
                         "logs": prepared.logs,
                     },
                 ),
@@ -137,6 +338,10 @@ class RuntimeRunService:
             assignment_id=run.assignment_id,
             backend=run.backend,  # type: ignore[arg-type]
             status=run.status,
+            stdout=run.stdout,
+            stderr=run.stderr,
+            exit_code=run.exit_code,
+            test_results=dict(run.test_results),
             logs=[str(line) for line in run.logs],
             artifacts=list(run.artifacts),
             metadata=dict(run.metadata_),

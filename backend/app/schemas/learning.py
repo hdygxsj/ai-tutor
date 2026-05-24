@@ -70,6 +70,7 @@ class AssignmentSummary(BaseModel):
 
 class AssignmentSubmissionRequest(BaseModel):
     content: str = Field(min_length=1)
+    run_id: str | None = None
 
 
 class AssignmentReviewSummary(BaseModel):

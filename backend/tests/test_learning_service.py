@@ -146,6 +146,7 @@ def test_submit_and_grade_passes_answer_and_records_learning_artifacts(
         "required_concepts": ["requires_grad", "backward"],
         "matched_concepts": ["requires_grad", "backward"],
         "missing_concepts": [],
+        "runtime": {},
     }
     assert review.llm_review["verdict"] == "passed"
 

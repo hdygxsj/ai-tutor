@@ -50,8 +50,16 @@ vi.mock("../api/client", () => ({
   listCourses: vi.fn().mockResolvedValue([]),
   listAgentSessions: vi.fn().mockResolvedValue([]),
   createAgentSession: vi.fn(),
-  createCourse: vi.fn(),
+  createCourse: vi.fn().mockResolvedValue({
+    goal: "自由探索 AI 课程",
+    id: "course-new",
+    lessons: [],
+    status: "active",
+    title: "自由探索课程",
+  }),
+  fetchCourseTimeline: vi.fn().mockResolvedValue({ course_id: "course-new", events: [] }),
   activateCourse: vi.fn(),
+  runAssignment: vi.fn(),
   saveTutorSettings: vi.fn(),
   sendTutorMessage: vi.fn(),
   startIntake: vi.fn(),
@@ -80,9 +88,9 @@ test("navigation clicks update the URL and render auxiliary pages", async () => 
 
   render(<App />);
 
-  await user.click(menuItem("学习计划"));
+  await user.click(menuItem("课程管理"));
   expect(window.location.pathname).toBe("/learning");
-  expect(screen.getByRole("heading", { name: "学习计划" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "课程管理" })).toBeInTheDocument();
   expect(await screen.findByText("创建学习计划后，这里会展示课程模块。")).toBeInTheDocument();
 
   await user.click(menuItem("作业反馈"));

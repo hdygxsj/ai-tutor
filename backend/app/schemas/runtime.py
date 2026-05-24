@@ -30,6 +30,10 @@ class RuntimeRunResponse(BaseModel):
     assignment_id: str
     backend: RuntimeBackend
     status: str
+    stdout: str = ""
+    stderr: str = ""
+    exit_code: int | None = None
+    test_results: dict = Field(default_factory=dict)
     logs: list[str]
     artifacts: list[dict]
     metadata: dict = Field(default_factory=dict)

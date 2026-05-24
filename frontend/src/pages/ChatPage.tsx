@@ -25,7 +25,8 @@ export function ChatPage() {
     sessionTokenTotal,
     updateSessionById,
   } = useChatSessions();
-  const { currentAgentSession, currentCourse } = useCourseSession();
+  const { adoptServerCourseSession, currentAgentSession, currentCourse } =
+    useCourseSession();
   const assignmentIde = useAssignmentIde();
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -99,8 +100,9 @@ export function ChatPage() {
         lastProvider: response.provider,
         messages: [...session.messages, assistantMessage],
       }));
+      await adoptServerCourseSession(response.course_id, response.session_id);
       setIsSending(false);
-      if (!currentCourse) {
+      if (!currentCourse && !response.course_id) {
         await createPlanForConversation({
           goal: content,
           messages: [...history, userMessage, assistantMessage],
@@ -189,27 +191,37 @@ export function ChatPage() {
         createdPlan={currentSession.createdPlan}
         currentCourse={currentCourse}
         error={error}
+        fileName={assignmentIde.fileName}
         hasConversation={hasConversation}
         input={input}
         isCodingMode={assignmentIde.isCodingMode}
         isCreatingPlan={isCreatingPlan}
+        isRunningAssignment={assignmentIde.isRunningAssignment}
         isSending={isSending}
         isSubmittingAssignment={assignmentIde.isSubmittingAssignment}
+        language={assignmentIde.language}
         lastProvider={currentSession.lastProvider}
         messages={messages}
         onChangeCodeDraft={assignmentIde.setCodeDraft}
+        onChangeFileName={assignmentIde.setFileName}
         onChangeInput={setInput}
+        onChangeLanguage={assignmentIde.setLanguage}
         onClearHistory={clearHistory}
         onCloseIdePanel={assignmentIde.closeIdePanel}
         onCreateConversation={createNewChat}
         onOpenHistory={() => setHistoryOpen(true)}
         onOpenIde={assignmentIde.openIdeFromAction}
+        onRunAssignment={() =>
+          void assignmentIde.runCurrentAssignment(currentAgentSession?.id)
+        }
         onSend={() => void handleSend()}
         onSubmitAssignment={() => void assignmentIde.submitCurrentAssignment()}
         onToggleDebugLayout={assignmentIde.toggleDebugLayout}
         planError={currentSession.planError}
         reviewError={assignmentIde.reviewError}
         reviewFeedback={assignmentIde.reviewFeedback}
+        runError={assignmentIde.runError}
+        runResult={assignmentIde.runResult}
         sessionTokenTotal={sessionTokenTotal}
       />
 

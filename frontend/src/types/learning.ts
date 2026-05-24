@@ -21,6 +21,10 @@ export interface LessonSummary {
     kind: string;
     prompt: string;
     status: string;
+    starter_code?: string;
+    test_command?: string;
+    tests?: string[];
+    dataset_notes?: string;
   } | null;
 }
 
@@ -130,6 +134,21 @@ export interface AssignmentReviewSummary {
   status: string;
   score: number;
   feedback: string;
+}
+
+export interface RuntimeRunResponse {
+  id: string;
+  course_id: string;
+  assignment_id: string;
+  backend: "sandbox" | "kubernetes";
+  status: string;
+  stdout: string;
+  stderr: string;
+  exit_code: number | null;
+  test_results: Record<string, unknown>;
+  logs: string[];
+  artifacts: Array<Record<string, unknown>>;
+  metadata: Record<string, unknown>;
 }
 
 export interface ExperimentArtifact {

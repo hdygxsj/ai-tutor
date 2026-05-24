@@ -382,9 +382,39 @@
   margin-bottom: 0;
 }
 
+.assignment-ide-panel__field {
+  display: grid;
+  gap: 6px;
+}
+
 .assignment-ide-panel__editor.ant-input {
   border-radius: 18px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.assignment-ide-panel__monaco {
+  border: 1px solid #1e293b;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.assignment-ide-panel__runtime {
+  background: #f8fafc;
+  border-color: #dbe4f0;
+}
+
+.assignment-ide-panel__logs {
+  background: #0f172a;
+  border-radius: 14px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.assignment-ide-panel__logs .ant-typography {
+  color: #dbeafe;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
 }
 
 .assignment-ide-panel__debug {

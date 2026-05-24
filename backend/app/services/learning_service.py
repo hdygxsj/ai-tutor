@@ -59,13 +59,28 @@ class LearningService:
         assignment = Assignment(
             tenant_id=self.tenant.tenant_id,
             workspace_id=self.tenant.workspace_id,
-            title="解释 autograd 的关键步骤",
-            kind="concept",
+            title="实现 autograd 的最小训练片段",
+            kind="code",
             prompt=(
-                "用自己的话解释 requires_grad 和 backward 在 PyTorch autograd "
-                "学习闭环中的作用。"
+                "补全一个最小 Python 练习：创建带 requires_grad=True 的变量，"
+                "计算 loss，调用 backward，并打印梯度。"
             ),
-            rubric={"required_concepts": ["requires_grad", "backward"]},
+            rubric={
+                "required_concepts": ["requires_grad", "backward"],
+                "starter_code": (
+                    "x = 2.0\n"
+                    "# TODO: 用 requires_grad=True 创建可求导变量\n"
+                    "# TODO: 计算一个 loss 并调用 backward()\n"
+                    "print('gradient:', 'TODO')\n"
+                ),
+                "test_command": "python solution.py",
+                "tests": [
+                    "代码应能用 Python 直接运行。",
+                    "stdout 中应打印 gradient。",
+                    "提交审阅前至少运行一次沙箱测试。",
+                ],
+                "dataset_notes": "本练习不需要外部数据集，只使用内置数字样例。",
+            },
             status="assigned",
         )
         progress = LessonProgress(
@@ -102,6 +117,18 @@ class LearningService:
                 workspace_id=self.tenant.workspace_id,
                 event_type="plan_created",
                 payload={"plan_id": plan.id, "course_id": plan.id, "title": plan.title},
+            )
+        )
+        self.db.add(
+            LearningEvent(
+                tenant_id=self.tenant.tenant_id,
+                workspace_id=self.tenant.workspace_id,
+                event_type="assignment_created",
+                payload={
+                    "course_id": plan.id,
+                    "assignment_id": assignment.id,
+                    "title": assignment.title,
+                },
             )
         )
         self.db.commit()
@@ -385,6 +412,12 @@ def build_event_summary(event_type: str, payload: dict[str, Any]) -> str:
         return f"学习者提问：{payload.get('user_message', '')}"
     if event_type == "assignment_graded":
         return f"作业审阅：{payload.get('status', 'unknown')}，得分 {payload.get('score', 0)}"
+    if event_type == "submission_reviewed":
+        return f"提交审阅：{payload.get('status', 'unknown')}，得分 {payload.get('score', 0)}"
+    if event_type == "assignment_created":
+        return f"创建作业：{payload.get('title', '未命名作业')}"
+    if event_type == "assignment_ready":
+        return f"作业就绪：{payload.get('title', '未命名作业')}"
     if event_type == "runtime_run":
         logs = payload.get("logs") or []
         log_preview = logs[-1] if logs else payload.get("status", "")

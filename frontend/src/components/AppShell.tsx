@@ -28,7 +28,7 @@ const menuItems: MenuProps["items"] = [
   {
     key: "learning",
     icon: <BookOutlined />,
-    label: "学习计划",
+    label: "课程管理",
   },
   {
     key: "assignments",

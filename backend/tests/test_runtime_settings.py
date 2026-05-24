@@ -109,9 +109,145 @@ def test_sandbox_assignment_run_returns_recorded_logs_and_status() -> None:
     assert payload["course_id"] == course["id"]
     assert payload["backend"] == "sandbox"
     assert payload["status"] == "completed"
-    assert "Sandbox prepared run" in payload["logs"][0]
-    assert "hello runtime" in payload["logs"][1]
+    assert payload["stdout"] == "hello runtime\n"
+    assert payload["stderr"] == ""
+    assert payload["exit_code"] == 0
+    assert payload["test_results"] == {"passed": True, "exit_code": 0}
+    assert "Sandbox executed Python snippet" in payload["logs"][0]
+    assert "stdout: hello runtime" in payload["logs"]
     assert payload["artifacts"] == []
+
+
+def test_sandbox_assignment_run_captures_failures_without_shell_execution() -> None:
+    client = TestClient(app)
+    course = client.post("/api/courses", json={"goal": "学习 autograd"}).json()
+    assignment_id = course["lessons"][0]["assignment"]["id"]
+
+    response = client.post(
+        f"/api/assignments/{assignment_id}/run",
+        json={
+            "code": (
+                "print('before')\n"
+                "raise SystemExit(3)"
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["backend"] == "sandbox"
+    assert payload["status"] == "failed"
+    assert payload["stdout"] == "before\n"
+    assert payload["stderr"] == ""
+    assert payload["exit_code"] == 3
+    assert payload["test_results"] == {"passed": False, "exit_code": 3}
+    assert payload["metadata"]["runner_type"] == "restricted_local_python_subprocess"
+    assert payload["metadata"]["shell"] is False
+
+
+def test_sandbox_assignment_run_blocks_dangerous_imports_before_execution() -> None:
+    client = TestClient(app)
+    course = client.post("/api/courses", json={"goal": "学习 autograd"}).json()
+    assignment_id = course["lessons"][0]["assignment"]["id"]
+
+    response = client.post(
+        f"/api/assignments/{assignment_id}/run",
+        json={"code": "import os\nprint(os.environ)"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["stdout"] == ""
+    assert "Import statements are not allowed" in payload["stderr"]
+    assert payload["exit_code"] is None
+    assert payload["metadata"]["execution"] == "blocked"
+    assert "PYTHON" not in str(payload)
+
+
+def test_sandbox_assignment_run_blocks_dunder_reflection_bypass() -> None:
+    client = TestClient(app)
+    course = client.post("/api/courses", json={"goal": "学习 autograd"}).json()
+    assignment_id = course["lessons"][0]["assignment"]["id"]
+
+    response = client.post(
+        f"/api/assignments/{assignment_id}/run",
+        json={
+            "code": (
+                "name = '__' + 'class' + '__'\n"
+                "print(getattr(1, name))\n"
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["stdout"] == ""
+    assert "not allowed" in payload["stderr"]
+    assert payload["metadata"]["execution"] == "blocked"
+
+
+def test_sandbox_assignment_run_blocks_private_module_escape_hatches() -> None:
+    client = TestClient(app)
+    course = client.post("/api/courses", json={"goal": "学习 autograd"}).json()
+    assignment_id = course["lessons"][0]["assignment"]["id"]
+
+    response = client.post(
+        f"/api/assignments/{assignment_id}/run",
+        json={"code": "value = 1\nprint(value._hidden)"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["stdout"] == ""
+    assert "Private attribute access is not allowed" in payload["stderr"]
+    assert payload["metadata"]["execution"] == "blocked"
+
+
+def test_sandbox_assignment_run_blocks_allowlisted_submodule_escape_hatches() -> None:
+    client = TestClient(app)
+    course = client.post("/api/courses", json={"goal": "学习 autograd"}).json()
+    assignment_id = course["lessons"][0]["assignment"]["id"]
+
+    response = client.post(
+        f"/api/assignments/{assignment_id}/run",
+        json={"code": "import json.tool as tool\nprint(tool.sys.modules['os'].listdir('/'))"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["stdout"] == ""
+    assert "Import statements are not allowed" in payload["stderr"]
+    assert payload["metadata"]["execution"] == "blocked"
+
+
+def test_sandbox_assignment_run_blocks_string_format_reflection() -> None:
+    client = TestClient(app)
+    course = client.post("/api/courses", json={"goal": "学习 autograd"}).json()
+    assignment_id = course["lessons"][0]["assignment"]["id"]
+
+    response = client.post(
+        f"/api/assignments/{assignment_id}/run",
+        json={
+            "code": (
+                "def f():\n"
+                "    return 1\n"
+                "field = '{0.SystemRandom.random.' + '_' + '_globals' + '_' + "
+                "'_[_os].environ}'\n"
+                "print(field.format(f))"
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["stdout"] == ""
+    assert "String field formatting is not allowed" in payload["stderr"]
+    assert payload["metadata"]["execution"] == "blocked"
 
 
 def test_kubernetes_assignment_run_without_kubeconfig_returns_clear_error() -> None:

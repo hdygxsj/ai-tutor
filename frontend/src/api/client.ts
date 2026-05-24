@@ -6,6 +6,7 @@ import type {
   CourseSummary,
   LearningPlanSummary,
   ExperimentRunResult,
+  RuntimeRunResponse,
   TutorChatRequest,
   TutorChatResponse,
   TutorConnectionTestResult,
@@ -128,10 +129,21 @@ export function createAgentSession(
 export function submitAssignment(
   assignmentId: string,
   content: string,
+  runId?: string,
 ): Promise<AssignmentReviewSummary> {
   return requestJson<AssignmentReviewSummary>(`/assignments/${assignmentId}/submit`, {
     method: "POST",
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, ...(runId ? { run_id: runId } : {}) }),
+  });
+}
+
+export function runAssignment(
+  assignmentId: string,
+  payload: { code: string; session_id?: string | null },
+): Promise<RuntimeRunResponse> {
+  return requestJson<RuntimeRunResponse>(`/assignments/${assignmentId}/run`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

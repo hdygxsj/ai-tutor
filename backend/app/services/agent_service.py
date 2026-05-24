@@ -52,6 +52,10 @@ def build_lesson_summary(lesson: LearningLesson) -> LessonSummary:
                 "kind": assignment.kind,
                 "prompt": assignment.prompt,
                 "status": assignment.status,
+                "starter_code": assignment.rubric.get("starter_code", ""),
+                "test_command": assignment.rubric.get("test_command", ""),
+                "tests": assignment.rubric.get("tests", []),
+                "dataset_notes": assignment.rubric.get("dataset_notes", ""),
             }
             if assignment
             else None

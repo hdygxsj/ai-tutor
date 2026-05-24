@@ -244,3 +244,183 @@ def test_course_timeline_returns_chat_review_and_runtime_events() -> None:
             app.dependency_overrides.pop(get_session, None)
         else:
             app.dependency_overrides[get_session] = original_override
+
+
+def test_agent_chat_teaches_without_assignment_for_concept_question() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    def override_get_session() -> Generator[Session, None, None]:
+        with Session(engine) as db:
+            yield db
+
+    original_override = app.dependency_overrides.get(get_session)
+    app.dependency_overrides[get_session] = override_get_session
+    try:
+        client = TestClient(app)
+        course = client.post("/api/courses", json={"goal": "学习线性回归"}).json()
+        session = client.post(
+            f"/api/courses/{course['id']}/sessions",
+            json={"title": "概念教学"},
+        ).json()
+
+        response = client.post(
+            "/api/agent/chat",
+            json={
+                "course_id": course["id"],
+                "session_id": session["id"],
+                "message": "我想学习机器学习和线性回归",
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["actions"] == []
+        assert "知识点" in payload["reply"]
+        assert "例子" in payload["reply"]
+        assert "检查理解" in payload["reply"]
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_session, None)
+        else:
+            app.dependency_overrides[get_session] = original_override
+
+
+def test_agent_chat_does_not_open_ide_for_write_an_explanation_request() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    def override_get_session() -> Generator[Session, None, None]:
+        with Session(engine) as db:
+            yield db
+
+    original_override = app.dependency_overrides.get(get_session)
+    app.dependency_overrides[get_session] = override_get_session
+    try:
+        client = TestClient(app)
+        course = client.post("/api/courses", json={"goal": "学习 autograd"}).json()
+        session = client.post(
+            f"/api/courses/{course['id']}/sessions",
+            json={"title": "概念教学"},
+        ).json()
+
+        response = client.post(
+            "/api/agent/chat",
+            json={
+                "course_id": course["id"],
+                "session_id": session["id"],
+                "message": "帮我写一下反向传播的直觉解释",
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["actions"] == []
+        assert "先回答上面的小问题" in payload["reply"]
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_session, None)
+        else:
+            app.dependency_overrides[get_session] = original_override
+
+
+def test_agent_chat_creates_assignment_action_for_coding_practice() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    def override_get_session() -> Generator[Session, None, None]:
+        with Session(engine) as db:
+            yield db
+
+    original_override = app.dependency_overrides.get(get_session)
+    app.dependency_overrides[get_session] = override_get_session
+    try:
+        client = TestClient(app)
+        course = client.post("/api/courses", json={"goal": "学习 autograd"}).json()
+        session = client.post(
+            f"/api/courses/{course['id']}/sessions",
+            json={"title": "代码练习"},
+        ).json()
+
+        response = client.post(
+            "/api/agent/chat",
+            json={
+                "course_id": course["id"],
+                "session_id": session["id"],
+                "message": "给我一个代码练习，写一个 autograd 作业",
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["actions"][0]["type"] == "assignment_ready"
+        assert (
+            payload["actions"][0]["payload"]["assignment_id"]
+            == course["lessons"][0]["assignment"]["id"]
+        )
+        assert "starter_code" in payload["actions"][0]["payload"]
+        assert "test_command" in payload["actions"][0]["payload"]
+        assert "tests" in payload["actions"][0]["payload"]
+        assert "请在右侧工作区完成" in payload["reply"]
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_session, None)
+        else:
+            app.dependency_overrides[get_session] = original_override
+
+
+def test_code_assignment_submit_uses_recent_runtime_evidence() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    def override_get_session() -> Generator[Session, None, None]:
+        with Session(engine) as db:
+            yield db
+
+    original_override = app.dependency_overrides.get(get_session)
+    app.dependency_overrides[get_session] = override_get_session
+    try:
+        client = TestClient(app)
+        course = client.post("/api/courses", json={"goal": "学习 autograd"}).json()
+        assignment_id = course["lessons"][0]["assignment"]["id"]
+        run = client.post(
+            f"/api/assignments/{assignment_id}/run",
+            json={"code": "print('all tests pass')"},
+        ).json()
+
+        response = client.post(
+            f"/api/assignments/{assignment_id}/submit",
+            json={"content": "print('all tests pass')", "run_id": run["id"]},
+        )
+        timeline_response = client.get(f"/api/courses/{course['id']}/timeline")
+
+        assert response.status_code == 200
+        review = response.json()
+        assert review["status"] == "passed"
+        assert run["id"] in review["feedback"]
+        assert "exit_code=0" in review["feedback"]
+        assert any(
+            event["event_type"] == "submission_reviewed"
+            for event in timeline_response.json()["events"]
+        )
+    finally:
+        if original_override is None:
+            app.dependency_overrides.pop(get_session, None)
+        else:
+            app.dependency_overrides[get_session] = original_override

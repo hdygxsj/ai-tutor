@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import {
   activateCourse,
@@ -39,6 +39,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  window.localStorage.clear();
   mockedListCourses.mockResolvedValue([
     {
       goal: "我想学习线性回归",
@@ -115,6 +116,11 @@ beforeEach(() => {
       },
     ],
   });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
 });
 
 test("renders the active learning plan and tasks", async () => {

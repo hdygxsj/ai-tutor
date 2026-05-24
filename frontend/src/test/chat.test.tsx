@@ -121,6 +121,7 @@ beforeEach(() => {
     assignment_id: "assignment-1",
     backend: "sandbox",
     course_id: "course-1",
+    exit_code: 0,
     id: "run-1",
     logs: [
       "Sandbox prepared run with image python:3.12-slim.",
@@ -128,6 +129,9 @@ beforeEach(() => {
     ],
     metadata: { execution: "preview_only", image: "python:3.12-slim" },
     status: "completed",
+    stderr: "",
+    stdout: "hello runtime\n",
+    test_results: { passed: true },
   });
 });
 
@@ -435,6 +439,7 @@ test("shows prepared Kubernetes runtime status without pretending execution happ
     assignment_id: "assignment-1",
     backend: "kubernetes",
     course_id: "course-1",
+    exit_code: null,
     id: "run-k8s-1",
     logs: [
       "Kubernetes run prepared in namespace ai-dream-runs.",
@@ -442,6 +447,9 @@ test("shows prepared Kubernetes runtime status without pretending execution happ
     ],
     metadata: { execution: "prepared_only", namespace: "ai-dream-runs" },
     status: "queued",
+    stderr: "",
+    stdout: "",
+    test_results: { execution: "prepared_only", passed: false },
   });
   mockedSendTutorMessage.mockResolvedValueOnce({
     actions: [
@@ -731,6 +739,55 @@ test("keeps chat usable when backend course bootstrap fails", async () => {
 
   expect(await screen.findByText("可以先从监督学习的训练流程开始。")).toBeInTheDocument();
   expect(screen.getByText("我想系统学习 PyTorch")).toBeInTheDocument();
+});
+
+test("adopts course and session returned by chat when bootstrap is unavailable", async () => {
+  const user = userEvent.setup();
+  mockedListCourses
+    .mockRejectedValueOnce(new Error("课程服务不可用"))
+    .mockResolvedValueOnce([
+      {
+        goal: "学习 PyTorch",
+        id: "course-server",
+        lessons: [],
+        status: "active",
+        title: "后端创建的课程",
+      },
+    ]);
+  mockedListAgentSessions.mockResolvedValueOnce([
+    {
+      course_id: "course-server",
+      id: "session-server",
+      messages: [],
+      status: "active",
+      title: "后端创建的 Agent 会话",
+      token_usage: { total_tokens: 30 },
+    },
+  ]);
+  mockedSendTutorMessage.mockResolvedValueOnce({
+    actions: [],
+    course_id: "course-server",
+    provider: "fake",
+    reply: "我先讲知识点，再决定是否进入练习。",
+    session_id: "session-server",
+    usage: {
+      completion_tokens: 12,
+      model: "fake",
+      prompt_tokens: 18,
+      provider: "fake",
+      source: "estimated",
+      total_tokens: 30,
+    },
+  });
+
+  render(<ChatPage />);
+
+  await user.type(screen.getByLabelText("输入给导师的消息"), "我想系统学习 PyTorch");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+
+  expect(await screen.findByText("我先讲知识点，再决定是否进入练习。")).toBeInTheDocument();
+  expect(await screen.findByText(/后端创建的课程/)).toBeInTheDocument();
+  expect(mockedStartIntake).not.toHaveBeenCalled();
 });
 
 test("API failure shows visible error and preserves conversation", async () => {

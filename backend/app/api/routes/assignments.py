@@ -21,7 +21,11 @@ def submit_assignment(
     tenant: Annotated[TenantContext, Depends(get_tenant_context)],
 ) -> AssignmentReviewSummary:
     try:
-        review = GradingService(db, tenant).submit_and_grade(assignment_id, request.content)
+        review = GradingService(db, tenant).submit_and_grade(
+            assignment_id,
+            request.content,
+            run_id=request.run_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="Assignment not found") from exc
     return AssignmentReviewSummary.model_validate(review, from_attributes=True)
